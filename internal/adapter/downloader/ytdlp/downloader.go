@@ -43,20 +43,20 @@ func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, e
 
 	_, err = cmd.Run(ctx, url)
 	if err != nil {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
 	}
 
 	entries, err := os.ReadDir(tmpDir)
 	if err != nil || len(entries) == 0 {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		return nil, fmt.Errorf("%w: no file downloaded", domain.ErrDownloadFailed)
 	}
 
 	filePath := filepath.Join(tmpDir, entries[0].Name())
 	info, err := os.Stat(filePath)
 	if err != nil {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
 	}
 

@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -16,6 +18,8 @@ type Config struct {
 }
 
 func Load() (*Config, error) {
+	_ = godotenv.Load(".env")
+
 	token := os.Getenv("TELEGRAM_BOT_TOKEN")
 	if token == "" {
 		return nil, fmt.Errorf("TELEGRAM_BOT_TOKEN is required")

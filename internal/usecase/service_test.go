@@ -64,7 +64,7 @@ func TestProcessURL_DownloadError(t *testing.T) {
 func TestProcessURL_VideoTooLarge(t *testing.T) {
 	tmpDir, _ := os.MkdirTemp("", "test-*")
 	tmpFile := filepath.Join(tmpDir, "video.mp4")
-	os.WriteFile(tmpFile, []byte("data"), 0644)
+	_ = os.WriteFile(tmpFile, []byte("data"), 0644)
 
 	svc := usecase.NewVideoService(
 		&mockDetector{result: domain.PlatformYouTube},
@@ -85,7 +85,7 @@ func TestProcessURL_VideoTooLarge(t *testing.T) {
 func TestProcessURL_Success(t *testing.T) {
 	tmpDir, _ := os.MkdirTemp("", "test-*")
 	tmpFile := filepath.Join(tmpDir, "video.mp4")
-	os.WriteFile(tmpFile, []byte("data"), 0644)
+	_ = os.WriteFile(tmpFile, []byte("data"), 0644)
 
 	svc := usecase.NewVideoService(
 		&mockDetector{result: domain.PlatformInstagram},

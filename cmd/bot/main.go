@@ -29,6 +29,8 @@ func main() {
 		Level: cfg.LogLevel,
 	}))
 
+	log.Info("starting multiverse-bot", "version", Version)
+
 	det := detector.New()
 	ytdlpDownloader := ytdlpdl.New()
 	cobaltDownloader := cobalt.New(cfg.CobaltAPIURL)
