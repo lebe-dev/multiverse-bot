@@ -21,7 +21,7 @@ func New() *RegexDetector {
 			{domain.PlatformYouTube, regexp.MustCompile(`(?i)(?:youtube\.com|youtu\.be)/`)},
 			{domain.PlatformInstagram, regexp.MustCompile(`(?i)instagram\.com/(?:p|reel|reels|tv)/`)},
 			{domain.PlatformTwitter, regexp.MustCompile(`(?i)(?:twitter\.com|x\.com)/`)},
-			{domain.PlatformThreads, regexp.MustCompile(`(?i)threads\.net/`)},
+			{domain.PlatformThreads, regexp.MustCompile(`(?i)threads\.(?:net|com)/`)},
 		},
 	}
 }

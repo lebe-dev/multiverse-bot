@@ -22,7 +22,8 @@ func TestRegexDetector_Detect(t *testing.T) {
 		{"instagram reels", "https://www.instagram.com/reels/ABC123/", domain.PlatformInstagram},
 		{"twitter", "https://twitter.com/user/status/123456", domain.PlatformTwitter},
 		{"x.com", "https://x.com/user/status/123456", domain.PlatformTwitter},
-		{"threads", "https://www.threads.net/@user/post/ABC123", domain.PlatformThreads},
+		{"threads.net", "https://www.threads.net/@user/post/ABC123", domain.PlatformThreads},
+		{"threads.com", "https://www.threads.com/@vuthiduyen48/post/DVTksS6iWNk", domain.PlatformThreads},
 		{"unknown", "https://example.com/video", domain.PlatformUnknown},
 		{"empty", "", domain.PlatformUnknown},
 	}
