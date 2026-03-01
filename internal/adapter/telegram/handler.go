@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -40,8 +41,16 @@ func (b *Bot) RegisterHandlers(allowedUsers []string) {
 }
 
 func (b *Bot) handleText(c tele.Context) error {
-	url := strings.TrimSpace(c.Text())
-	if !isURL(url) {
+	rawText := c.Text()
+	url := extractURL(rawText)
+
+	b.log.Debug("incoming message",
+		"raw_text", rawText,
+		"extracted_url", url,
+		"sender", c.Sender().Username,
+	)
+
+	if url == "" {
 		return c.Send("Please send a valid URL.")
 	}
 
@@ -149,8 +158,17 @@ func (b *Bot) handleError(c tele.Context, err error) error {
 	}
 }
 
-func isURL(s string) bool {
-	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+var urlRe = regexp.MustCompile(`https?://\S+`)
+
+// extractURL finds the first HTTP(S) URL in the message text.
+// This handles cases where the user sends a URL surrounded by text
+// (e.g. sharing from a mobile app adds caption around the link).
+func extractURL(text string) string {
+	text = strings.TrimSpace(text)
+	if match := urlRe.FindString(text); match != "" {
+		return match
+	}
+	return ""
 }
 
 func (b *Bot) handleConfigCommand(c tele.Context) error {

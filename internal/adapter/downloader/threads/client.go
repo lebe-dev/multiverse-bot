@@ -39,27 +39,7 @@ type client struct {
 	userAgent   string
 }
 
-// chromeHTTP1Spec returns a Chrome-based TLS ClientHello spec with ALPN
-// forced to http/1.1 only. This is required because Go's http.Transport
-// does not support HTTP/2 over custom DialTLSContext connections.
-func chromeHTTP1Spec() *utls.ClientHelloSpec {
-	spec, err := utls.UTLSIdToSpec(utls.HelloChrome_Auto)
-	if err != nil {
-		// Fallback: return nil to use the raw HelloChrome_Auto (may break on h2 servers).
-		return nil
-	}
-	for _, ext := range spec.Extensions {
-		if alpn, ok := ext.(*utls.ALPNExtension); ok {
-			alpn.AlpnProtocols = []string{"http/1.1"}
-			break
-		}
-	}
-	return &spec
-}
-
 func newClient(userAgent string) *client {
-	spec := chromeHTTP1Spec()
-
 	dialer := &net.Dialer{Timeout: 30 * time.Second}
 	transport := &http.Transport{
 		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -69,15 +49,24 @@ func newClient(userAgent string) *client {
 			}
 			host, _, _ := net.SplitHostPort(addr)
 
-			var tlsConn *utls.UConn
-			if spec != nil {
-				tlsConn = utls.UClient(conn, &utls.Config{ServerName: host}, utls.HelloCustom)
-				if err := tlsConn.ApplyPreset(spec); err != nil {
-					_ = conn.Close()
-					return nil, fmt.Errorf("apply utls preset: %w", err)
+			tlsConn := utls.UClient(conn, &utls.Config{ServerName: host}, utls.HelloChrome_Auto)
+
+			// Build the Chrome ClientHello, then override ALPN to http/1.1
+			// so Go's http.Transport (which only supports HTTP/1.x via
+			// DialTLSContext) doesn't choke on an HTTP/2 response.
+			if err := tlsConn.BuildHandshakeState(); err != nil {
+				_ = conn.Close()
+				return nil, err
+			}
+			for _, ext := range tlsConn.Extensions {
+				if alpn, ok := ext.(*utls.ALPNExtension); ok {
+					alpn.AlpnProtocols = []string{"http/1.1"}
+					break
 				}
-			} else {
-				tlsConn = utls.UClient(conn, &utls.Config{ServerName: host}, utls.HelloChrome_Auto)
+			}
+			if err := tlsConn.MarshalClientHello(); err != nil {
+				_ = conn.Close()
+				return nil, err
 			}
 
 			if err := tlsConn.HandshakeContext(ctx); err != nil {
@@ -163,6 +152,11 @@ func (c *client) fetchPage(ctx context.Context, pageURL string) (string, error) 
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	// Meta redirects blocked requests to /?error=invalid_post with 200 OK.
+	if resp.Request != nil && resp.Request.URL.Query().Get("error") != "" {
+		return "", fmt.Errorf("blocked by Meta (redirected to %s)", resp.Request.URL.String())
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
@@ -219,9 +213,16 @@ func normalizeURL(rawURL string) (string, error) {
 
 	path := strings.TrimRight(parsed.Path, "/")
 
+	// Preserve xmt query param — Meta may use the share token as a
+	// legitimacy signal.
+	query := ""
+	if xmt := parsed.Query().Get("xmt"); xmt != "" {
+		query = "?xmt=" + url.QueryEscape(xmt)
+	}
+
 	// Short URL format /t/CODE — keep as-is, HTTP client follows redirects.
 	if strings.HasPrefix(path, "/t/") {
-		return fmt.Sprintf("https://www.threads.com%s", path), nil
+		return fmt.Sprintf("https://www.threads.com%s%s", path, query), nil
 	}
 
 	// /@user/post/CODE format.
@@ -232,7 +233,7 @@ func normalizeURL(rawURL string) (string, error) {
 
 	username := parts[1]
 	code := parts[3]
-	return fmt.Sprintf("https://www.threads.com/%s/post/%s", username, code), nil
+	return fmt.Sprintf("https://www.threads.com/%s/post/%s%s", username, code, query), nil
 }
 
 // --- SSR data parsing ---

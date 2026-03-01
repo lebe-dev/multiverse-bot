@@ -27,9 +27,14 @@ func TestNormalizeURL(t *testing.T) {
 			want:  "https://www.threads.com/@user/post/ABC123",
 		},
 		{
-			name:  "query params stripped",
+			name:  "non-xmt query params stripped",
 			input: "https://www.threads.com/@user/post/ABC123?igsh=foo",
 			want:  "https://www.threads.com/@user/post/ABC123",
+		},
+		{
+			name:  "xmt query param preserved",
+			input: "https://www.threads.com/@user/post/ABC123?xmt=AQF0x9&igsh=foo",
+			want:  "https://www.threads.com/@user/post/ABC123?xmt=AQF0x9",
 		},
 		{
 			name:  "short URL /t/CODE",
