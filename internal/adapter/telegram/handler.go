@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -34,6 +35,7 @@ func (b *Bot) RegisterHandlers(allowedUsers []string) {
 		)
 	})
 
+	b.bot.Handle("/config", b.handleConfigCommand)
 	b.bot.Handle(tele.OnText, b.handleText)
 }
 
@@ -138,4 +140,19 @@ func (b *Bot) handleError(c tele.Context, err error) error {
 
 func isURL(s string) bool {
 	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
+func (b *Bot) handleConfigCommand(c tele.Context) error {
+	username := c.Sender().Username
+	if !b.IsAdmin(username) {
+		return c.Send("❌ You don't have permission to use this command")
+	}
+
+	maxFileSizeMB := b.maxFileSize / (1024 * 1024)
+	config := strings.Builder{}
+	config.WriteString("⚙️ Bot Configuration\n\n")
+	config.WriteString(fmt.Sprintf("Version: <code>%s</code>\n", b.version))
+	config.WriteString(fmt.Sprintf("Max file size: <code>%d MB</code>\n", maxFileSizeMB))
+
+	return c.Send(config.String(), &tele.SendOptions{ParseMode: tele.ModeHTML})
 }

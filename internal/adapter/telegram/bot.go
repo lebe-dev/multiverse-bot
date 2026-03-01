@@ -11,9 +11,12 @@ import (
 )
 
 type Bot struct {
-	bot     *tele.Bot
-	service *usecase.VideoService
-	log     *slog.Logger
+	bot       *tele.Bot
+	service   *usecase.VideoService
+	log       *slog.Logger
+	adminIDs  map[string]struct{}
+	version   string
+	maxFileSize int64
 }
 
 func New(token string, service *usecase.VideoService, log *slog.Logger) (*Bot, error) {
@@ -26,10 +29,41 @@ func New(token string, service *usecase.VideoService, log *slog.Logger) (*Bot, e
 	}
 
 	return &Bot{
-		bot:     b,
-		service: service,
-		log:     log,
+		bot:      b,
+		service:  service,
+		log:      log,
+		adminIDs: make(map[string]struct{}),
 	}, nil
+}
+
+func (b *Bot) SetConfig(version string, maxFileSize int64) {
+	b.version = version
+	b.maxFileSize = maxFileSize
+}
+
+func (b *Bot) SetAdminUsers(admins []string) {
+	for _, admin := range admins {
+		b.adminIDs[admin] = struct{}{}
+	}
+}
+
+func (b *Bot) NotifyAdminsStarted(version string) {
+	if len(b.adminIDs) == 0 {
+		return
+	}
+
+	msg := fmt.Sprintf("🚀 Запустилась версия %s", version)
+	for admin := range b.adminIDs {
+		recipient := &tele.Chat{Username: admin}
+		if _, err := b.bot.Send(recipient, msg); err != nil {
+			b.log.Error("failed to notify admin", "admin", admin, "error", err)
+		}
+	}
+}
+
+func (b *Bot) IsAdmin(username string) bool {
+	_, exists := b.adminIDs[username]
+	return exists
 }
 
 func (b *Bot) Start() {
