@@ -1,0 +1,6 @@
+/multiverse-bot
+.DS_Store
+*.md
+!README.md
+!DEV.md
+/.env
