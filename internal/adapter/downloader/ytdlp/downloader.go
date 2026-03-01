@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/lrstanley/go-ytdlp"
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
@@ -29,7 +30,14 @@ func (d *Downloader) Supports(p domain.Platform) bool {
 	return d.supported[p]
 }
 
+// normalizeURL rewrites known domain aliases to the canonical form expected by yt-dlp.
+// yt-dlp's Threads extractor only matches threads.net, not threads.com.
+func normalizeURL(url string) string {
+	return strings.ReplaceAll(url, "threads.com/", "threads.net/")
+}
+
 func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, error) {
+	url = normalizeURL(url)
 	tmpDir, err := os.MkdirTemp("", "multiverse-ytdlp-*")
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
