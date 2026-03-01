@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Flow
+
+Run "just lint" and "just test" after implementation.
+
 ## Commands
 
 ```bash
