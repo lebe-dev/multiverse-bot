@@ -13,6 +13,7 @@ type Config struct {
 	TelegramToken string
 	LogLevel      slog.Level
 	AllowedUsers  []string
+	AdminUsers    []string
 	CobaltAPIURL  string
 	MaxFileSize   int64
 }
@@ -29,6 +30,7 @@ func Load() (*Config, error) {
 		TelegramToken: token,
 		LogLevel:      parseLogLevel(os.Getenv("LOG_LEVEL")),
 		AllowedUsers:  parseAllowedUsers(os.Getenv("ALLOWED_USERS")),
+		AdminUsers:    parseAllowedUsers(os.Getenv("ADMIN_USERS")),
 		CobaltAPIURL:  getEnvOrDefault("COBALT_API_URL", "https://api.cobalt.tools"),
 		MaxFileSize:   50 * 1024 * 1024, // 50MB
 	}
