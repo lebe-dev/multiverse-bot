@@ -44,7 +44,7 @@ func (b *Bot) handleText(c tele.Context) error {
 	}
 
 	// Send acknowledgment message
-	statusMsg, err := c.Send("Processing your video...\nDetecting platform...")
+	statusMsg, err := b.bot.Send(c.Chat(), "Processing your video...\nDetecting platform...")
 	if err != nil {
 		b.log.Error("failed to send status message", "error", err)
 	}
