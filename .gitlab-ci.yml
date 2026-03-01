@@ -32,7 +32,6 @@ build_image:
     - docker build --progress=plain --platform=linux/amd64 -t $DOCKER_IMAGE:$APP_VERSION .
     - docker push $DOCKER_IMAGE:$APP_VERSION
   dependencies:
-    - lint
     - test
   tags:
     - docker
