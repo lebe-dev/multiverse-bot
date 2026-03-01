@@ -41,3 +41,6 @@ build-release-image: lint test
 
 release: build-release-image
     docker push {{ image }}:{{ app_version }}
+
+deploy:
+    ssh kaiman 'cd /opt/multiverse-bot && docker compose pull && docker compose down && docker compose up -d'
