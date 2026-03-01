@@ -11,6 +11,7 @@ import (
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/detector"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/cobalt"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/composite"
+	threadsdl "gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/threads"
 	ytdlpdl "gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/ytdlp"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/telegram"
 	"gitlab.com/tiny-services/multiverse-bot/internal/usecase"
@@ -32,9 +33,10 @@ func main() {
 	log.Info("starting multiverse-bot", "version", Version)
 
 	det := detector.New()
+	threadsDownloader := threadsdl.New()
 	ytdlpDownloader := ytdlpdl.New()
 	cobaltDownloader := cobalt.New(cfg.CobaltAPIURL)
-	comp := composite.New(log, ytdlpDownloader, cobaltDownloader)
+	comp := composite.New(log, threadsDownloader, ytdlpDownloader, cobaltDownloader)
 
 	svc := usecase.NewVideoService(det, comp, log, cfg.MaxFileSize)
 
