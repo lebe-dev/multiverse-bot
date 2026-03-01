@@ -22,6 +22,8 @@ test:
     paths:
       - .cache/golangci-lint
       - .go/pkg/mod
+  tags:
+    - docker
 
 build_image:
   stage: build
