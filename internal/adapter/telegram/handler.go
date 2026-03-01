@@ -151,8 +151,8 @@ func (b *Bot) handleConfigCommand(c tele.Context) error {
 	maxFileSizeMB := b.maxFileSize / (1024 * 1024)
 	config := strings.Builder{}
 	config.WriteString("⚙️ Bot Configuration\n\n")
-	config.WriteString(fmt.Sprintf("Version: <code>%s</code>\n", b.version))
-	config.WriteString(fmt.Sprintf("Max file size: <code>%d MB</code>\n", maxFileSizeMB))
+	fmt.Fprintf(&config, "Version: <code>%s</code>\n", b.version)
+	fmt.Fprintf(&config, "Max file size: <code>%d MB</code>\n", maxFileSizeMB)
 
 	return c.Send(config.String(), &tele.SendOptions{ParseMode: tele.ModeHTML})
 }
