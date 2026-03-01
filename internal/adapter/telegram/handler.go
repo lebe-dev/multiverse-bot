@@ -100,6 +100,9 @@ func (b *Bot) handleText(c tele.Context) error {
 }
 
 func (b *Bot) handleError(c tele.Context, err error) error {
+	username := c.Sender().Username
+	isAdmin := b.IsAdmin(username)
+
 	switch {
 	case errors.Is(err, domain.ErrUnsupportedPlatform):
 		return c.Send(
@@ -121,20 +124,28 @@ func (b *Bot) handleError(c tele.Context, err error) error {
 		)
 	case errors.Is(err, domain.ErrDownloadFailed):
 		b.log.Error("download failed", "error", err)
-		return c.Send(
-			"Download failed\n\n" +
+		message := "Download failed\n\n" +
 			"The video couldn't be downloaded. This might happen if:\n" +
 			"• The video is restricted or private\n" +
 			"• The link is broken\n" +
 			"• The platform blocked the request\n\n" +
-			"Please try again with a different video.",
-		)
+			"Please try again with a different video."
+
+		if isAdmin {
+			message += fmt.Sprintf("\n\n<code>Technical details:\n%v</code>", err)
+		}
+
+		return c.Send(message, &tele.SendOptions{ParseMode: tele.ModeHTML})
 	default:
 		b.log.Error("unexpected error", "error", err)
-		return c.Send(
-			"Something went wrong\n\n" +
-			"Please try again. If the problem persists, try with a different video.",
-		)
+		message := "Something went wrong\n\n" +
+			"Please try again. If the problem persists, try with a different video."
+
+		if isAdmin {
+			message += fmt.Sprintf("\n\n<code>Technical details:\n%v</code>", err)
+		}
+
+		return c.Send(message, &tele.SendOptions{ParseMode: tele.ModeHTML})
 	}
 }
 
