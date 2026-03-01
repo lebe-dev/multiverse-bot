@@ -1,6 +1,8 @@
 # ── Stage 1: build Go binary ────────────────────────────────────────────────
 FROM golang:1.26-alpine AS builder
 
+ARG TARGETARCH
+
 RUN apk add --no-cache git upx
 
 WORKDIR /app
@@ -10,7 +12,7 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /bot ./cmd/bot \
+RUN GOOS=linux GOARCH=${TARGETARCH} CGO_ENABLED=0 go build -ldflags="-s -w" -o /bot ./cmd/bot \
     && upx --best --lzma /bot
 
 # ── Stage 2: fetch yt-dlp static binary ─────────────────────────────────────
