@@ -10,11 +10,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
+
+	utls "github.com/refraction-networking/utls"
 )
 
 // video represents an extracted video with its metadata.
@@ -25,13 +28,72 @@ type video struct {
 }
 
 // client fetches Threads pages and extracts video download URLs.
+// It uses uTLS to mimic a real Chrome TLS fingerprint, which is
+// required to bypass Meta's bot detection on Threads.
+// A separate plain HTTP client is used for CDN video downloads,
+// because the CDN does not require TLS fingerprint spoofing and
+// may reject the modified ClientHello.
 type client struct {
-	httpClient *http.Client
+	pageClient  *http.Client // uTLS-based, for threads.com pages
+	videoClient *http.Client // standard, for CDN video downloads
+	userAgent   string
 }
 
-func newClient() *client {
+// chromeHTTP1Spec returns a Chrome-based TLS ClientHello spec with ALPN
+// forced to http/1.1 only. This is required because Go's http.Transport
+// does not support HTTP/2 over custom DialTLSContext connections.
+func chromeHTTP1Spec() *utls.ClientHelloSpec {
+	spec, err := utls.UTLSIdToSpec(utls.HelloChrome_Auto)
+	if err != nil {
+		// Fallback: return nil to use the raw HelloChrome_Auto (may break on h2 servers).
+		return nil
+	}
+	for _, ext := range spec.Extensions {
+		if alpn, ok := ext.(*utls.ALPNExtension); ok {
+			alpn.AlpnProtocols = []string{"http/1.1"}
+			break
+		}
+	}
+	return &spec
+}
+
+func newClient(userAgent string) *client {
+	spec := chromeHTTP1Spec()
+
+	dialer := &net.Dialer{Timeout: 30 * time.Second}
+	transport := &http.Transport{
+		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			conn, err := dialer.DialContext(ctx, network, addr)
+			if err != nil {
+				return nil, err
+			}
+			host, _, _ := net.SplitHostPort(addr)
+
+			var tlsConn *utls.UConn
+			if spec != nil {
+				tlsConn = utls.UClient(conn, &utls.Config{ServerName: host}, utls.HelloCustom)
+				if err := tlsConn.ApplyPreset(spec); err != nil {
+					_ = conn.Close()
+					return nil, fmt.Errorf("apply utls preset: %w", err)
+				}
+			} else {
+				tlsConn = utls.UClient(conn, &utls.Config{ServerName: host}, utls.HelloChrome_Auto)
+			}
+
+			if err := tlsConn.HandshakeContext(ctx); err != nil {
+				_ = conn.Close()
+				return nil, err
+			}
+			return tlsConn, nil
+		},
+	}
 	return &client{
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		pageClient: &http.Client{
+			Transport: transport,
+			Timeout:   30 * time.Second,
+		},
+		videoClient: &http.Client{Timeout: 30 * time.Second},
+		userAgent:   userAgent,
 	}
 }
 
@@ -87,14 +149,15 @@ func (c *client) fetchPage(ctx context.Context, pageURL string) (string, error) 
 		return "", err
 	}
 
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("User-Agent", c.userAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	req.Header.Set("Sec-Fetch-Mode", "navigate")
 	req.Header.Set("Sec-Fetch-Site", "none")
 	req.Header.Set("Sec-Fetch-Dest", "document")
+	req.Header.Set("Sec-Fetch-User", "?1")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.pageClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -117,9 +180,9 @@ func (c *client) downloadVideo(ctx context.Context, videoURL string, w io.Writer
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("User-Agent", c.userAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.videoClient.Do(req)
 	if err != nil {
 		return err
 	}

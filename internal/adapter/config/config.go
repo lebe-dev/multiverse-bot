@@ -9,13 +9,16 @@ import (
 	"github.com/joho/godotenv"
 )
 
+const defaultBrowserUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
 type Config struct {
-	TelegramToken string
-	LogLevel      slog.Level
-	AllowedUsers  []string
-	AdminUsers    []string
-	CobaltAPIURL  string
-	MaxFileSize   int64
+	TelegramToken    string
+	LogLevel         slog.Level
+	AllowedUsers     []string
+	AdminUsers       []string
+	CobaltAPIURL     string
+	BrowserUserAgent string
+	MaxFileSize      int64
 }
 
 func Load() (*Config, error) {
@@ -31,8 +34,9 @@ func Load() (*Config, error) {
 		LogLevel:      parseLogLevel(os.Getenv("LOG_LEVEL")),
 		AllowedUsers:  parseAllowedUsers(os.Getenv("ALLOWED_USERS")),
 		AdminUsers:    parseAllowedUsers(os.Getenv("ADMIN_USERS")),
-		CobaltAPIURL:  getEnvOrDefault("COBALT_API_URL", "https://api.cobalt.tools"),
-		MaxFileSize:   50 * 1024 * 1024, // 50MB
+		CobaltAPIURL:     getEnvOrDefault("COBALT_API_URL", "https://api.cobalt.tools"),
+		BrowserUserAgent: getEnvOrDefault("BROWSER_USER_AGENT", defaultBrowserUserAgent),
+		MaxFileSize:      50 * 1024 * 1024, // 50MB
 	}
 
 	return cfg, nil

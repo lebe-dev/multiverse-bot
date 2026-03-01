@@ -17,7 +17,7 @@ import (
 	"gitlab.com/tiny-services/multiverse-bot/internal/usecase"
 )
 
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 func main() {
 	cfg, err := config.Load()
@@ -33,7 +33,7 @@ func main() {
 	log.Info("starting multiverse-bot", "version", Version)
 
 	det := detector.New()
-	threadsDownloader := threadsdl.New()
+	threadsDownloader := threadsdl.New(cfg.BrowserUserAgent)
 	ytdlpDownloader := ytdlpdl.New()
 	cobaltDownloader := cobalt.New(cfg.CobaltAPIURL)
 	comp := composite.New(log, threadsDownloader, ytdlpDownloader, cobaltDownloader)

@@ -28,6 +28,7 @@ just docker-logs  # tail bot logs
 | `ALLOWED_USERS` | no | (open) | Comma-separated Telegram usernames; empty = allow everyone |
 | `COBALT_API_URL` | no | `https://api.cobalt.tools` | Cobalt API base URL |
 | `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn`, `error` |
+| `BROWSER_USER_AGENT` | no | Chrome 131 UA | Browser User-Agent for Threads requests |
 
 Copy `.env-example` to `.env` to get started.
 
@@ -44,6 +45,7 @@ internal/
     detector/    # URL → Platform detection (regex-based)
     downloader/
       ytdlp/     # yt-dlp backend (YouTube)
+      threads/   # Direct Threads scraper with uTLS (Chrome TLS fingerprint)
       cobalt/    # Cobalt API backend (Instagram, Twitter, Threads)
       composite/ # Fan-out: tries each backend in order until one succeeds
     telegram/    # telebot.v4 bot, handlers, middleware

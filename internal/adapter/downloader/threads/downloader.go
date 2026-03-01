@@ -15,8 +15,8 @@ type Downloader struct {
 	client *client
 }
 
-func New() *Downloader {
-	return &Downloader{client: newClient()}
+func New(userAgent string) *Downloader {
+	return &Downloader{client: newClient(userAgent)}
 }
 
 func (d *Downloader) Supports(p domain.Platform) bool {

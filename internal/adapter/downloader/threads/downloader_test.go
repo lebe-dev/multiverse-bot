@@ -7,7 +7,7 @@ import (
 )
 
 func TestDownloader_Supports(t *testing.T) {
-	d := New()
+	d := New("test-agent")
 
 	if !d.Supports(domain.PlatformThreads) {
 		t.Error("should support PlatformThreads")
