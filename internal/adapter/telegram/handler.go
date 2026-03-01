@@ -23,7 +23,15 @@ func (b *Bot) RegisterHandlers(allowedUsers []string) {
 	}
 
 	b.bot.Handle("/start", func(c tele.Context) error {
-		return c.Send("Send me a video link from YouTube, Instagram, X/Twitter, or Threads.")
+		return c.Send(
+			"Welcome to Multiverse Bot\n\n" +
+			"I can download videos from:\n" +
+			"• YouTube\n" +
+			"• Instagram\n" +
+			"• X (Twitter)\n" +
+			"• Threads\n\n" +
+			"Just send me a link and I'll download the video.",
+		)
 	})
 
 	b.bot.Handle(tele.OnText, b.handleText)
@@ -35,6 +43,12 @@ func (b *Bot) handleText(c tele.Context) error {
 		return c.Send("Please send a valid URL.")
 	}
 
+	// Send acknowledgment message
+	statusMsg, err := c.Send("Processing your video...\nDetecting platform...")
+	if err != nil {
+		b.log.Error("failed to send status message", "error", err)
+	}
+
 	if err := c.Notify(tele.UploadingVideo); err != nil {
 		b.log.Error("failed to send typing action", "error", err)
 	}
@@ -42,11 +56,41 @@ func (b *Bot) handleText(c tele.Context) error {
 	ctx, cancel := context.WithTimeout(context.Background(), downloadTimeout)
 	defer cancel()
 
+	// Create a progress callback to update the status message
+	updateStatus := func(status string) {
+		if statusMsg != nil {
+			_, err := b.bot.Edit(statusMsg, "Processing your video...\n\n"+status)
+			if err != nil {
+				b.log.Debug("failed to update status", "error", err)
+			}
+		}
+	}
+
+	// Update status with platform information
+	go func() {
+		// Wait a moment for platform detection to complete, then update
+		time.Sleep(500 * time.Millisecond)
+		updateStatus("Downloading video...")
+	}()
+
 	video, cleanup, err := b.service.ProcessURL(ctx, url)
 	if err != nil {
+		// Try to delete the status message before sending error
+		if statusMsg != nil {
+			_ = b.bot.Delete(statusMsg)
+		}
 		return b.handleError(c, err)
 	}
 	defer cleanup()
+
+	// Update status before sending video
+	if statusMsg != nil {
+		_ = b.bot.Delete(statusMsg)
+	}
+
+	if err := c.Notify(tele.UploadingDocument); err != nil {
+		b.log.Error("failed to send upload action", "error", err)
+	}
 
 	return c.Send(&tele.Video{
 		File: tele.FromDisk(video.FilePath),
@@ -56,15 +100,39 @@ func (b *Bot) handleText(c tele.Context) error {
 func (b *Bot) handleError(c tele.Context, err error) error {
 	switch {
 	case errors.Is(err, domain.ErrUnsupportedPlatform):
-		return c.Send("Unsupported platform. I support YouTube, Instagram, X/Twitter, and Threads.")
+		return c.Send(
+			"Unsupported platform\n\n" +
+			"I support:\n" +
+			"• YouTube\n" +
+			"• Instagram\n" +
+			"• X (Twitter)\n" +
+			"• Threads\n\n" +
+			"Please send a link from one of these platforms.",
+		)
 	case errors.Is(err, domain.ErrVideoTooLarge):
-		return c.Send("Video is too large (over 50MB). Try a shorter video or lower quality.")
+		return c.Send(
+			"Video is too large (over 50MB)\n\n" +
+			"Try:\n" +
+			"• A shorter video\n" +
+			"• Lower quality version\n" +
+			"• A different source",
+		)
 	case errors.Is(err, domain.ErrDownloadFailed):
 		b.log.Error("download failed", "error", err)
-		return c.Send("Failed to download the video. Please try again later.")
+		return c.Send(
+			"Download failed\n\n" +
+			"The video couldn't be downloaded. This might happen if:\n" +
+			"• The video is restricted or private\n" +
+			"• The link is broken\n" +
+			"• The platform blocked the request\n\n" +
+			"Please try again with a different video.",
+		)
 	default:
 		b.log.Error("unexpected error", "error", err)
-		return c.Send("Something went wrong. Please try again.")
+		return c.Send(
+			"Something went wrong\n\n" +
+			"Please try again. If the problem persists, try with a different video.",
+		)
 	}
 }
 
