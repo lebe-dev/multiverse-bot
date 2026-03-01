@@ -20,6 +20,7 @@ func New() *Downloader {
 			domain.PlatformYouTube:   true,
 			domain.PlatformInstagram: true,
 			domain.PlatformTwitter:   true,
+			domain.PlatformThreads:   true,
 		},
 	}
 }
