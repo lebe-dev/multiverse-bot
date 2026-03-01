@@ -31,7 +31,6 @@ func New(apiURL string) *Downloader {
 			domain.PlatformYouTube:   true,
 			domain.PlatformInstagram: true,
 			domain.PlatformTwitter:   true,
-			domain.PlatformThreads:   true,
 		},
 	}
 }
