@@ -37,7 +37,7 @@ stop-dev-image:
 ########################################
 
 build-release-image: lint test
-    docker build --progress=plain --platform=linux/amd64 -t {{ image }}:{{ app_version }} .
+    docker build --progress=plain --platform=linux/amd64 -t {{ image }}:{{ app_version }} -t {{ image }}:latest .
 
 release: build-release-image
     docker push {{ image }}:{{ app_version }}
