@@ -1,0 +1,68 @@
+stages:
+  - lint
+  - test
+  - build
+  - push
+
+variables:
+  DOCKER_IMAGE: "tinyops/multiverse-bot"
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: ""
+
+# Extract version from Go source code
+before_script:
+  - export APP_VERSION=$(grep 'const Version = ' cmd/bot/main.go | cut -d'"' -f2)
+
+lint:
+  stage: lint
+  image: golang:1.26-alpine
+  script:
+    - apk add --no-cache golangci-lint git
+    - golangci-lint run ./...
+  cache:
+    key: $CI_COMMIT_REF_SLUG
+    paths:
+      - .cache/golangci-lint
+      - .go/pkg/mod
+
+test:
+  stage: test
+  image: golang:1.26-alpine
+  script:
+    - go test -v -race ./...
+  cache:
+    key: $CI_COMMIT_REF_SLUG
+    paths:
+      - .cache/golangci-lint
+      - .go/pkg/mod
+
+build_image:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker build --progress=plain --platform=linux/amd64 -t $DOCKER_IMAGE:$APP_VERSION .
+    - docker save $DOCKER_IMAGE:$APP_VERSION > image.tar
+  artifacts:
+    paths:
+      - image.tar
+    expire_in: 1 hour
+  dependencies:
+    - lint
+    - test
+
+push_image:
+  stage: push
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker load < image.tar
+    - echo $DOCKER_REGISTRY_PASSWORD | docker login -u $DOCKER_REGISTRY_USER --password-stdin $DOCKER_REGISTRY_URL
+    - docker push $DOCKER_IMAGE:$APP_VERSION
+  dependencies:
+    - build_image
+  only:
+    - main
+    - master
