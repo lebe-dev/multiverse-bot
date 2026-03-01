@@ -20,9 +20,8 @@ ARG TARGETARCH
 
 RUN apk add --no-cache wget \
     && case "${TARGETARCH}" in \
-         amd64) BIN="yt-dlp_linux"         ;; \
-         arm64) BIN="yt-dlp_linux_aarch64"  ;; \
-         arm)   BIN="yt-dlp_linux_armv7l"   ;; \
+         amd64) BIN="yt-dlp_musllinux"          ;; \
+         arm64) BIN="yt-dlp_musllinux_aarch64"  ;; \
          *)     echo "Unsupported arch: ${TARGETARCH}" && exit 1 ;; \
        esac \
     && wget -qO /usr/local/bin/yt-dlp \
