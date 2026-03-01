@@ -44,6 +44,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	bot.SetAdminUsers(cfg.AdminUsers)
+	bot.SetConfig(Version, cfg.MaxFileSize)
 	bot.RegisterHandlers(cfg.AllowedUsers)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -51,6 +53,7 @@ func main() {
 
 	go func() {
 		log.Info("bot started")
+		bot.NotifyAdminsStarted(Version)
 		bot.Start()
 	}()
 
