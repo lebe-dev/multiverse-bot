@@ -3,5 +3,6 @@
 *.md
 !README.md
 !DEV.md
+!CLAUDE.md
 /.env
 /bin
