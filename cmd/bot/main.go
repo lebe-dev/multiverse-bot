@@ -32,7 +32,7 @@ func main() {
 	log.Info("starting multiverse-bot", "version", Version)
 
 	det := detector.New()
-	ytdlpDownloader := ytdlpdl.New(cfg.CookiesFile)
+	ytdlpDownloader := ytdlpdl.New(cfg.CookiesFile, cfg.MaxFileSize)
 	cobaltDownloader := cobalt.New(cfg.CobaltAPIURL)
 	comp := composite.New(log, ytdlpDownloader, cobaltDownloader)
 

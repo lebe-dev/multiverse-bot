@@ -11,14 +11,26 @@ import (
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 )
 
+// qualityFormats lists format selectors from best to worst quality.
+// The downloader tries each in order until the file fits within maxSize.
+var qualityFormats = []string{
+	"bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+	"bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]",
+	"bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]",
+	"bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best[height<=360]",
+	"worst[ext=mp4]/worst",
+}
+
 type Downloader struct {
 	cookiesFile string
+	maxSize     int64
 	supported   map[domain.Platform]bool
 }
 
-func New(cookiesFile string) *Downloader {
+func New(cookiesFile string, maxSize int64) *Downloader {
 	return &Downloader{
 		cookiesFile: cookiesFile,
+		maxSize:     maxSize,
 		supported: map[domain.Platform]bool{
 			domain.PlatformYouTube:   true,
 			domain.PlatformInstagram: true,
@@ -40,6 +52,23 @@ func normalizeURL(url string) string {
 
 func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, error) {
 	url = normalizeURL(url)
+
+	for _, format := range qualityFormats {
+		video, err := d.tryDownload(ctx, url, format)
+		if err != nil {
+			return nil, err
+		}
+		if d.maxSize <= 0 || video.Size <= d.maxSize {
+			return video, nil
+		}
+		// File too large — clean up and try lower quality
+		_ = os.RemoveAll(filepath.Dir(video.FilePath))
+	}
+
+	return nil, fmt.Errorf("%w: video is too large even at lowest quality", domain.ErrDownloadFailed)
+}
+
+func (d *Downloader) tryDownload(ctx context.Context, url, format string) (*domain.Video, error) {
 	tmpDir, err := os.MkdirTemp("", "multiverse-ytdlp-*")
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
@@ -49,7 +78,7 @@ func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, e
 
 	cmd := ytdlp.New().
 		SetExecutable("/usr/local/bin/yt-dlp").
-		FormatSort("ext:mp4:m4a").
+		Format(format).
 		Output(outputTemplate).
 		NoPlaylist().
 		JsRuntimes("node")
@@ -58,8 +87,7 @@ func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, e
 		cmd = cmd.Cookies(d.cookiesFile)
 	}
 
-	_, err = cmd.Run(ctx, url)
-	if err != nil {
+	if _, err = cmd.Run(ctx, url); err != nil {
 		_ = os.RemoveAll(tmpDir)
 		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
 	}
