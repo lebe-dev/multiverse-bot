@@ -28,7 +28,6 @@ func New(apiURL string) *Downloader {
 		apiURL:     apiURL,
 		httpClient: &http.Client{Timeout: 60 * time.Second},
 		supported: map[domain.Platform]bool{
-			domain.PlatformYouTube:   true,
 			domain.PlatformInstagram: true,
 			domain.PlatformTwitter:   true,
 		},

@@ -12,11 +12,13 @@ import (
 )
 
 type Downloader struct {
-	supported map[domain.Platform]bool
+	cookiesFile string
+	supported   map[domain.Platform]bool
 }
 
-func New() *Downloader {
+func New(cookiesFile string) *Downloader {
 	return &Downloader{
+		cookiesFile: cookiesFile,
 		supported: map[domain.Platform]bool{
 			domain.PlatformYouTube:   true,
 			domain.PlatformInstagram: true,
@@ -46,9 +48,15 @@ func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, e
 	outputTemplate := filepath.Join(tmpDir, "%(id)s.%(ext)s")
 
 	cmd := ytdlp.New().
+		SetExecutable("/usr/local/bin/yt-dlp").
 		FormatSort("ext:mp4:m4a").
 		Output(outputTemplate).
-		NoPlaylist()
+		NoPlaylist().
+		JsRuntimes("node")
+
+	if _, err := os.Stat(d.cookiesFile); err == nil {
+		cmd = cmd.Cookies(d.cookiesFile)
+	}
 
 	_, err = cmd.Run(ctx, url)
 	if err != nil {

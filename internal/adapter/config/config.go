@@ -16,6 +16,7 @@ type Config struct {
 	AdminUsers    []string
 	CobaltAPIURL  string
 	MaxFileSize   int64
+	CookiesFile   string
 }
 
 func Load() (*Config, error) {
@@ -33,6 +34,7 @@ func Load() (*Config, error) {
 		AdminUsers:    parseAllowedUsers(os.Getenv("ADMIN_USERS")),
 		CobaltAPIURL:  getEnvOrDefault("COBALT_API_URL", "https://api.cobalt.tools"),
 		MaxFileSize:   50 * 1024 * 1024, // 50MB
+		CookiesFile:   getEnvOrDefault("YTDLP_COOKIES_FILE", "./cookies.txt"),
 	}
 
 	return cfg, nil
