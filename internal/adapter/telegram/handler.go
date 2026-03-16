@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -163,21 +161,26 @@ func (b *Bot) handleCookiesStatus(c tele.Context) error {
 	if !b.IsAdmin(c.Sender().Username) {
 		return c.Send("You don't have permission to use this command.")
 	}
-	_, err := os.Stat(b.cookiesFile)
+	info, err := os.Stat(b.cookiesFile)
 	if err == nil {
-		info, _ := os.Stat(b.cookiesFile)
 		return c.Send(fmt.Sprintf("Cookies file loaded ✅\nPath: <code>%s</code>\nSize: %d bytes\n\nTo update — send a new cookies.txt file.", b.cookiesFile, info.Size()), &tele.SendOptions{ParseMode: tele.ModeHTML})
 	}
 	return c.Send("No cookies file found ❌\n\nSend a <code>cookies.txt</code> file (Netscape format) to this chat to enable YouTube downloads.", &tele.SendOptions{ParseMode: tele.ModeHTML})
 }
 
+// maxCookiesFileSize limits cookie uploads to 1 MB.
+const maxCookiesFileSize = 1 * 1024 * 1024
+
 func (b *Bot) handleDocument(c tele.Context) error {
-	if !b.IsAdmin(c.Sender().Username) {
+	doc := c.Message().Document
+	if doc == nil {
 		return nil
 	}
 
-	doc := c.Message().Document
-	if doc == nil {
+	if !b.IsAdmin(c.Sender().Username) {
+		if doc.FileName == "cookies.txt" {
+			return c.Send("You don't have permission to upload cookies.")
+		}
 		return nil
 	}
 
@@ -185,26 +188,16 @@ func (b *Bot) handleDocument(c tele.Context) error {
 		return c.Send("Please send a file named <code>cookies.txt</code>.", &tele.SendOptions{ParseMode: tele.ModeHTML})
 	}
 
-	teleFile, err := b.bot.FileByID(doc.FileID)
+	if doc.FileSize > maxCookiesFileSize {
+		return c.Send("Cookies file is too large (max 1 MB).")
+	}
+
+	reader, err := b.bot.File(&doc.File)
 	if err != nil {
 		b.log.Error("failed to get file from Telegram", "error", err)
 		return c.Send("Failed to get file from Telegram.")
 	}
-
-	fileURL := b.bot.URL + "/file/bot" + b.bot.Token + "/" + teleFile.FilePath
-
-	proxyTransport := &http.Transport{}
-	if proxyURL, err := url.Parse(os.Getenv("https_proxy")); err == nil && proxyURL.Host != "" {
-		proxyTransport.Proxy = http.ProxyURL(proxyURL)
-	}
-	httpClient := &http.Client{Transport: proxyTransport}
-
-	resp, err := httpClient.Get(fileURL)
-	if err != nil {
-		b.log.Error("failed to download cookies file", "error", err)
-		return c.Send("Failed to download file from Telegram.")
-	}
-	defer resp.Body.Close()
+	defer reader.Close()
 
 	f, err := os.Create(b.cookiesFile)
 	if err != nil {
@@ -213,7 +206,7 @@ func (b *Bot) handleDocument(c tele.Context) error {
 	}
 	defer f.Close()
 
-	if _, err := io.Copy(f, resp.Body); err != nil {
+	if _, err := io.Copy(f, io.LimitReader(reader, maxCookiesFileSize)); err != nil {
 		b.log.Error("failed to write cookies file", "error", err)
 		return c.Send("Failed to write cookies file.")
 	}

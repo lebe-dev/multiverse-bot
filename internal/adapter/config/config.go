@@ -17,6 +17,7 @@ type Config struct {
 	CobaltAPIURL  string
 	MaxFileSize   int64
 	CookiesFile   string
+	YtdlpPath     string
 }
 
 func Load() (*Config, error) {
@@ -35,6 +36,7 @@ func Load() (*Config, error) {
 		CobaltAPIURL:  getEnvOrDefault("COBALT_API_URL", "https://api.cobalt.tools"),
 		MaxFileSize:   50 * 1024 * 1024, // 50MB
 		CookiesFile:   getEnvOrDefault("YTDLP_COOKIES_FILE", "./cookies.txt"),
+		YtdlpPath:     getEnvOrDefault("YTDLP_PATH", "yt-dlp"),
 	}
 
 	return cfg, nil

@@ -22,7 +22,10 @@ just docker-logs  # tail bot logs
 |---|---|---|---|
 | `TELEGRAM_BOT_TOKEN` | yes | — | Bot token from BotFather |
 | `ALLOWED_USERS` | no | (open) | Comma-separated Telegram usernames; empty = allow everyone |
+| `ADMIN_USERS` | no | — | Comma-separated Telegram admin usernames |
 | `COBALT_API_URL` | no | `https://api.cobalt.tools` | Cobalt API base URL |
+| `YTDLP_PATH` | no | `yt-dlp` | Path to yt-dlp executable |
+| `YTDLP_COOKIES_FILE` | no | `./cookies.txt` | Path to cookies file for yt-dlp |
 | `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn`, `error` |
 
 Copy `.env-example` to `.env` to get started.
