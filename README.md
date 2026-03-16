@@ -2,27 +2,43 @@
 
 Telegram-бот для скачивания видео с популярных платформ.
 
-![Go](https://img.shields.io/badge/Go-1.20+-00ADD8?style=flat-square&logo=go)
+![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go)
 
-## Описание
+## Поддерживаемые платформы
 
-**Multiverse Bot** — это Telegram-бот, который позволяет пользователям скачивать видео с YouTube, Instagram, X (Twitter) и Threads. Просто отправьте ссылку боту в личные сообщения, и он вернёт вам видеофайл.
-
-Бот полностью настраивается через переменные окружения и готов к развертыванию в Docker.
+| Платформа | Бэкенд |
+|---|---|
+| YouTube | yt-dlp |
+| Instagram | Cobalt API |
+| X (Twitter) | Cobalt API |
+| Threads | yt-dlp |
 
 ## Быстрый старт
 
-### Предварительные требования
+### Требования
 
 - Go 1.26+
-- [Just](https://github.com/casey/just) (для управления командами)
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) (последняя версия)
+- Node.js 20+ (для решения YouTube JS-challenge)
+- ffmpeg
 
-### Установка
+### Установка зависимостей (Ubuntu/Debian)
+
+```bash
+# yt-dlp (актуальная версия — обязательно именно так, не через apt)
+sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+sudo chmod a+rx /usr/local/bin/yt-dlp
+
+# Node.js и ffmpeg
+sudo apt-get install -y nodejs ffmpeg
+```
+
+### Установка бота
 
 1. **Клонируйте репозиторий**
 
 ```bash
-git clone https://github.com/yourusername/multiverse-bot.git
+git clone git@github.com:amidexe/multiverse-bot.git
 cd multiverse-bot
 ```
 
@@ -32,132 +48,164 @@ cd multiverse-bot
 cp .env-example .env
 ```
 
-3. **Установите переменные окружения**
+3. **Настройте переменные окружения в `.env`**
 
 ```bash
 TELEGRAM_BOT_TOKEN=your_token_from_botfather
+ADMIN_USERS=your_telegram_username
 LOG_LEVEL=info
-ALLOWED_USERS=optional_usernames
-COBALT_API_URL=https://api.cobalt.tools
 ```
 
-4. **Запустите бота локально**
+4. **Соберите и запустите**
 
 ```bash
-just run
+go build -o multiverse-bot ./cmd/bot/
+./multiverse-bot
 ```
 
 ## Конфигурация
 
-Все настройки задаются через переменные окружения в файле `.env`:
-
 | Переменная | Требуется | По умолчанию | Описание |
 |---|---|---|---|
 | `TELEGRAM_BOT_TOKEN` | Да | — | Токен бота от BotFather |
-| `ALLOWED_USERS` | ❌ Нет | (все) | Список разрешённых пользователей (запятая-разделитель) |
-| `COBALT_API_URL` | ❌ Нет | `https://api.cobalt.tools` | URL Cobalt API для видео с социальных сетей |
-| `LOG_LEVEL` | ❌ Нет | `info` | Уровень логирования: `debug`, `info`, `warn`, `error` |
+| `ADMIN_USERS` | Нет | — | Telegram username(ы) администраторов через запятую |
+| `ALLOWED_USERS` | Нет | (все) | Список разрешённых пользователей через запятую |
+| `COBALT_API_URL` | Нет | `https://api.cobalt.tools` | URL Cobalt API |
+| `YTDLP_COOKIES_FILE` | Нет | `./cookies.txt` | Путь к файлу cookies для yt-dlp |
+| `LOG_LEVEL` | Нет | `info` | Уровень логирования: `debug`, `info`, `warn`, `error` |
 
-### Получение токена
+## Команды бота
 
-1. Найдите в Telegram бота **@BotFather**
-2. Отправьте команду `/newbot`
-3. Скопируйте полученный токен в `TELEGRAM_BOT_TOKEN`
+| Команда | Доступ | Описание |
+|---|---|---|
+| `/start` | Все | Приветствие и список платформ |
+| `/cookies` | Только admin | Показать статус cookies файла |
+| `/config` | Только admin | Показать конфигурацию бота |
 
-## Команды
+Для скачивания видео — просто отправьте ссылку.
 
-Проект использует `Justfile` для управления командами:
+## Cookies для YouTube (важно для серверного деплоя)
+
+YouTube блокирует запросы с IP-адресов дата-центров и требует аутентификацию. Без cookies бот будет возвращать ошибку `Sign in to confirm you're not a bot`.
+
+### Как экспортировать cookies
+
+> Используйте **Firefox** — Chrome инвалидирует cookies сразу после экспорта.
+
+1. Установите расширение **cookies.txt** для Firefox:
+   https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/
+
+2. Войдите на `youtube.com` под своим Google аккаунтом
+
+3. Нажмите на иконку расширения → **Current Site** → сохранится файл `youtube.com_cookies.txt`
+
+4. Переименуйте файл в `cookies.txt`
+
+5. **После экспорта не используйте этот браузер для YouTube** — иначе cookies ротируются
+
+### Как передать cookies боту
+
+**Способ 1 — через Telegram (рекомендуется):**
+
+Отправьте файл `cookies.txt` боту в личные сообщения. Бот сохранит его на сервере и ответит подтверждением. Доступно только для пользователей из `ADMIN_USERS`.
+
+**Способ 2 — вручную на сервере:**
 
 ```bash
-just run             # Запустить бота локально
-just build           # Собрать бинарный файл в bin/multiverse-bot
-just test            # Запустить все тесты
-just test ./path/... # Запустить тесты конкретного пакета
-just lint            # Запустить golangci-lint
-just docker-build    # Собрать Docker образ
-just docker-up       # Запустить с docker-compose
-just docker-down     # Остановить docker-compose
-just docker-logs     # Просмотреть логи бота
+# Скопировать файл в директорию бота
+scp cookies.txt user@your-server:/path/to/bot/cookies.txt
+# Или через переменную окружения
+YTDLP_COOKIES_FILE=/path/to/cookies.txt
 ```
 
-## 🏗️ Архитектура
+## Деплой на Ubuntu-сервер
 
-Проект следует принципам **Clean Architecture** с разделением на три слоя:
+```bash
+# Клонировать репозиторий
+git clone git@github.com:amidexe/multiverse-bot.git
+cd multiverse-bot
+
+# Установить зависимости
+sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+sudo chmod a+rx /usr/local/bin/yt-dlp
+sudo apt-get install -y nodejs ffmpeg golang
+
+# Собрать
+go build -o multiverse-bot ./cmd/bot/
+
+# Создать .env
+cp .env-example .env
+nano .env
+
+# Запустить
+./multiverse-bot
+```
+
+### systemd (для автозапуска)
+
+Создайте `/etc/systemd/system/multiverse-bot.service`:
+
+```ini
+[Unit]
+Description=Multiverse Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/multiverse-bot
+EnvironmentFile=/opt/multiverse-bot/.env
+ExecStart=/opt/multiverse-bot/multiverse-bot
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable multiverse-bot
+sudo systemctl start multiverse-bot
+sudo systemctl status multiverse-bot
+```
+
+## Архитектура
 
 ```
 internal/
-  domain/           # Интерфейсы и типы данных (без зависимостей)
+  domain/           # Интерфейсы и типы данных
   usecase/          # Бизнес-логика (VideoService)
-  adapter/          # Реализации интерфейсов
-    config/         # Загрузка конфигурации из переменных
-    detector/       # Определение платформы по URL (regex)
+  adapter/
+    config/         # Загрузка конфигурации из env
+    detector/       # Определение платформы по URL
     downloader/
-      ytdlp/        # Бэкенд для YouTube (yt-dlp)
-      cobalt/       # Бэкенд Cobalt API (Instagram, Twitter, Threads)
-      composite/    # Итератор: пробует все бэкенды по порядку
-    telegram/       # Telegram бот (telebot.v4), обработчики
-cmd/bot/main.go     # Точка входа, связывание компонентов
+      ytdlp/        # Бэкенд yt-dlp (YouTube, Threads)
+      cobalt/       # Бэкенд Cobalt API (Instagram, Twitter)
+      composite/    # Пробует бэкенды по порядку
+    telegram/       # Telegram бот (telebot.v4)
+cmd/bot/main.go     # Точка входа
 ```
-
-### Ключевые решения
-
-- **Домен**: Интерфейсы `domain.Downloader` и `domain.PlatformDetector` определены в `internal/domain/` и реализованы в адаптерах
-- **Composite downloader**: Последовательно пробует бэкенды (сначала yt-dlp, потом Cobalt)
-- **Управление ресурсами**: `VideoService.ProcessURL` возвращает функцию очистки для удаления временных файлов
-- **Лимит размера**: Максимум 50 МБ (ограничение Telegram Bot API)
-- **Фильтрация пользователей**: `ALLOWED_USERS` работает на уровне Telegram обработчиков
-
-## Docker
-
-### Собрать образ
-
-```bash
-just docker-build
-```
-
-### Запустить с docker-compose
-
-```bash
-just docker-up
-```
-
-### Остановить
-
-```bash
-just docker-down
-```
-
-### Просмотреть логи
-
-```bash
-just docker-logs
-```
-
-## Тестирование
-
-```bash
-# Все тесты
-just test
-
-# Конкретный пакет
-just test ./internal/usecase/...
-
-# С логированием
-LOG_LEVEL=debug just test
-```
-
-## Использование
-
-1. Найдите бота в Telegram (по имени от BotFather)
-2. Отправьте ссылку на видео с любой из поддерживаемых платформ:
-   - YouTube
-   - Instagram
-   - X (Twitter)
-   - Threads
-3. Бот обработает видео и отправит вам файл
-
-Если вы установили `ALLOWED_USERS`, только указанные пользователи смогут использовать бота.
 
 ## Разработка
 
+```bash
+just run          # запуск локально
+just build        # сборка бинарника
+just test         # тесты
+just lint         # линтер
+just docker-up    # запуск в Docker
+just docker-logs  # логи
+```
+
 Смотри [DEV.md](DEV.md).
+
+## Changelog
+
+### Текущая версия (форк от lebe-dev/multiverse-bot)
+
+- **fix:** убран YouTube из поддерживаемых платформ Cobalt — он возвращал `error.api.youtube.login`; YouTube обрабатывается только через yt-dlp
+- **fix:** ошибка компиляции в `handler.go` — `c.Send()` в telebot.v4 возвращает 1 значение
+- **fix:** yt-dlp теперь использует Node.js как JS-runtime (`--js-runtimes node`) для решения YouTube signature/n-challenge на серверных IP
+- **feat:** управление cookies через Telegram — команда `/cookies` и загрузка файла прямо в чат с ботом
+- **feat:** переменная `YTDLP_COOKIES_FILE` для указания пути к cookies
