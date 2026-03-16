@@ -31,7 +31,8 @@ just docker-logs  # tail bot logs
 | `YTDLP_PATH` | no | `yt-dlp` | Path to yt-dlp executable |
 | `YTDLP_COOKIES_FILE` | no | `./cookies.txt` | Path to cookies file for yt-dlp |
 | `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn`, `error` |
-| `BROWSER_USER_AGENT` | no | Chrome 131 UA | Browser User-Agent for Threads requests |
+| `THREADS_ENGINE` | no | `default` | Threads engine: `default` (direct scraping with uTLS) or `lovethreads` (lovethreads.net proxy) |
+| `BROWSER_USER_AGENT` | no | Chrome 131 UA | Browser User-Agent for Threads requests (only used with `default` engine) |
 
 Copy `.env-example` to `.env` to get started.
 
@@ -48,8 +49,9 @@ internal/
     detector/    # URL → Platform detection (regex-based)
     downloader/
       ytdlp/     # yt-dlp backend (YouTube)
-      threads/   # Direct Threads scraper with uTLS (Chrome TLS fingerprint)
-      cobalt/    # Cobalt API backend (Instagram, Twitter, Threads)
+      threads/     # Direct Threads scraper with uTLS (Chrome TLS fingerprint)
+      lovethreads/ # Threads via lovethreads.net proxy service
+      cobalt/      # Cobalt API backend (Instagram, Twitter, Threads)
       composite/ # Fan-out: tries each backend in order until one succeeds
     telegram/    # telebot.v4 bot, handlers, middleware
 cmd/bot/main.go  # Wires everything together

@@ -39,6 +39,23 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.MaxFileSize != 50*1024*1024 {
 		t.Errorf("expected MaxFileSize 50MB, got %d", cfg.MaxFileSize)
 	}
+	if cfg.ThreadsEngine != "default" {
+		t.Errorf("expected default ThreadsEngine 'default', got %s", cfg.ThreadsEngine)
+	}
+}
+
+func TestLoad_ThreadsEngine(t *testing.T) {
+	t.Setenv("TELEGRAM_BOT_TOKEN", "test-token")
+	t.Setenv("THREADS_ENGINE", "lovethreads")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.ThreadsEngine != "lovethreads" {
+		t.Errorf("expected ThreadsEngine 'lovethreads', got %s", cfg.ThreadsEngine)
+	}
 }
 
 func TestLoad_CustomYtdlpPath(t *testing.T) {

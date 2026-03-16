@@ -11,13 +11,15 @@ import (
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/detector"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/cobalt"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/composite"
+	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/lovethreads"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/threads"
 	ytdlpdl "gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/ytdlp"
+	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/telegram"
 	"gitlab.com/tiny-services/multiverse-bot/internal/usecase"
 )
 
-const Version = "0.3.0"
+const Version = "0.4.0"
 
 func main() {
 	cfg, err := config.Load()
@@ -35,7 +37,17 @@ func main() {
 	det := detector.New()
 	ytdlpDownloader := ytdlpdl.New(cfg.YtdlpPath, cfg.CookiesFile, cfg.MaxFileSize)
 	cobaltDownloader := cobalt.New(cfg.CobaltAPIURL)
-	threadsDownloader := threads.New(cfg.BrowserUserAgent)
+
+	var threadsDownloader domain.Downloader
+	switch cfg.ThreadsEngine {
+	case "lovethreads":
+		threadsDownloader = lovethreads.New()
+		log.Info("using lovethreads.net engine for Threads")
+	default:
+		threadsDownloader = threads.New(cfg.BrowserUserAgent)
+		log.Info("using default (direct) engine for Threads")
+	}
+
 	comp := composite.New(log, threadsDownloader, ytdlpDownloader, cobaltDownloader)
 
 	svc := usecase.NewVideoService(det, comp, log, cfg.MaxFileSize)
