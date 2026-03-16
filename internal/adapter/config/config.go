@@ -22,6 +22,7 @@ type Config struct {
 	YtdlpPath        string
 	BrowserUserAgent string
 	ThreadsEngine    string
+	YouTubeEngine    string
 }
 
 func Load() (*Config, error) {
@@ -43,6 +44,7 @@ func Load() (*Config, error) {
 		YtdlpPath:        getEnvOrDefault("YTDLP_PATH", "yt-dlp"),
 		BrowserUserAgent: getEnvOrDefault("BROWSER_USER_AGENT", defaultBrowserUserAgent),
 		ThreadsEngine:    getEnvOrDefault("THREADS_ENGINE", "default"),
+		YouTubeEngine:    getEnvOrDefault("YOUTUBE_ENGINE", "default"),
 	}
 
 	return cfg, nil

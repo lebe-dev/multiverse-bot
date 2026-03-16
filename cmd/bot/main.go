@@ -12,6 +12,7 @@ import (
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/cobalt"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/composite"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/lovethreads"
+	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/savevids"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/threads"
 	ytdlpdl "gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/ytdlp"
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
@@ -48,7 +49,22 @@ func main() {
 		log.Info("using default (direct) engine for Threads")
 	}
 
-	comp := composite.New(log, threadsDownloader, ytdlpDownloader, cobaltDownloader)
+	var youtubeDownloader domain.Downloader
+	switch cfg.YouTubeEngine {
+	case "savevids":
+		youtubeDownloader = savevids.New(cfg.MaxFileSize)
+		log.Info("using savevids engine for YouTube")
+	default:
+		log.Info("using default (yt-dlp) engine for YouTube")
+	}
+
+	backends := []domain.Downloader{threadsDownloader}
+	if youtubeDownloader != nil {
+		backends = append(backends, youtubeDownloader)
+	}
+	backends = append(backends, ytdlpDownloader, cobaltDownloader)
+
+	comp := composite.New(log, backends...)
 
 	svc := usecase.NewVideoService(det, comp, log, cfg.MaxFileSize)
 
