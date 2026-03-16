@@ -1,6 +1,7 @@
 services:
   bot:
-    build: .
+    image: tinyops/multiverse-bot:0.3.0
+    #build: .
     restart: unless-stopped
     env_file:
       - .env
