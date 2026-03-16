@@ -6,7 +6,7 @@ import (
 )
 
 func TestLoad_MissingToken(t *testing.T) {
-	os.Unsetenv("TELEGRAM_BOT_TOKEN")
+	_ = os.Unsetenv("TELEGRAM_BOT_TOKEN")
 	_, err := Load()
 	if err == nil {
 		t.Fatal("expected error when TELEGRAM_BOT_TOKEN is missing")

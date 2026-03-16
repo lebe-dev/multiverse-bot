@@ -12,14 +12,15 @@ import (
 const defaultBrowserUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 type Config struct {
-	TelegramToken string
-	LogLevel      slog.Level
-	AllowedUsers  []string
-	AdminUsers    []string
-	CobaltAPIURL  string
-	MaxFileSize   int64
-	CookiesFile   string
-	YtdlpPath     string
+	TelegramToken     string
+	LogLevel          slog.Level
+	AllowedUsers      []string
+	AdminUsers        []string
+	CobaltAPIURL      string
+	MaxFileSize       int64
+	CookiesFile       string
+	YtdlpPath         string
+	BrowserUserAgent  string
 }
 
 func Load() (*Config, error) {
@@ -31,14 +32,15 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		TelegramToken: token,
-		LogLevel:      parseLogLevel(os.Getenv("LOG_LEVEL")),
-		AllowedUsers:  parseAllowedUsers(os.Getenv("ALLOWED_USERS")),
-		AdminUsers:    parseAllowedUsers(os.Getenv("ADMIN_USERS")),
-		CobaltAPIURL:  getEnvOrDefault("COBALT_API_URL", "https://api.cobalt.tools"),
-		MaxFileSize:   50 * 1024 * 1024, // 50MB
-		CookiesFile:   getEnvOrDefault("YTDLP_COOKIES_FILE", "./cookies.txt"),
-		YtdlpPath:     getEnvOrDefault("YTDLP_PATH", "yt-dlp"),
+		TelegramToken:    token,
+		LogLevel:         parseLogLevel(os.Getenv("LOG_LEVEL")),
+		AllowedUsers:     parseAllowedUsers(os.Getenv("ALLOWED_USERS")),
+		AdminUsers:       parseAllowedUsers(os.Getenv("ADMIN_USERS")),
+		CobaltAPIURL:     getEnvOrDefault("COBALT_API_URL", "https://api.cobalt.tools"),
+		MaxFileSize:      50 * 1024 * 1024, // 50MB
+		CookiesFile:      getEnvOrDefault("YTDLP_COOKIES_FILE", "./cookies.txt"),
+		YtdlpPath:        getEnvOrDefault("YTDLP_PATH", "yt-dlp"),
+		BrowserUserAgent: getEnvOrDefault("BROWSER_USER_AGENT", defaultBrowserUserAgent),
 	}
 
 	return cfg, nil

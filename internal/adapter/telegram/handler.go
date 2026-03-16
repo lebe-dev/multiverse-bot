@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -214,14 +215,18 @@ func (b *Bot) handleDocument(c tele.Context) error {
 		b.log.Error("failed to get file from Telegram", "error", err)
 		return c.Send("Failed to get file from Telegram.")
 	}
-	defer reader.Close()
+	defer func() {
+		_ = reader.Close()
+	}()
 
 	f, err := os.Create(b.cookiesFile)
 	if err != nil {
 		b.log.Error("failed to save cookies file", "error", err)
 		return c.Send("Failed to save cookies file on server.")
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 
 	if _, err := io.Copy(f, io.LimitReader(reader, maxCookiesFileSize)); err != nil {
 		b.log.Error("failed to write cookies file", "error", err)
