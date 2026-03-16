@@ -32,7 +32,7 @@ func main() {
 	log.Info("starting multiverse-bot", "version", Version)
 
 	det := detector.New()
-	ytdlpDownloader := ytdlpdl.New()
+	ytdlpDownloader := ytdlpdl.New(cfg.YtdlpPath, cfg.CookiesFile, cfg.MaxFileSize)
 	cobaltDownloader := cobalt.New(cfg.CobaltAPIURL)
 	comp := composite.New(log, ytdlpDownloader, cobaltDownloader)
 
@@ -45,7 +45,7 @@ func main() {
 	}
 
 	bot.SetAdminUsers(cfg.AdminUsers)
-	bot.SetConfig(Version, cfg.MaxFileSize)
+	bot.SetConfig(Version, cfg.MaxFileSize, cfg.CookiesFile)
 	bot.RegisterHandlers(cfg.AllowedUsers)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

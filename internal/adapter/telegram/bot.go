@@ -11,12 +11,13 @@ import (
 )
 
 type Bot struct {
-	bot       *tele.Bot
-	service   *usecase.VideoService
-	log       *slog.Logger
-	adminIDs  map[string]struct{}
-	version   string
+	bot         *tele.Bot
+	service     *usecase.VideoService
+	log         *slog.Logger
+	adminIDs    map[string]struct{}
+	version     string
 	maxFileSize int64
+	cookiesFile string
 }
 
 func New(token string, service *usecase.VideoService, log *slog.Logger) (*Bot, error) {
@@ -36,9 +37,10 @@ func New(token string, service *usecase.VideoService, log *slog.Logger) (*Bot, e
 	}, nil
 }
 
-func (b *Bot) SetConfig(version string, maxFileSize int64) {
+func (b *Bot) SetConfig(version string, maxFileSize int64, cookiesFile string) {
 	b.version = version
 	b.maxFileSize = maxFileSize
+	b.cookiesFile = cookiesFile
 }
 
 func (b *Bot) SetAdminUsers(admins []string) {

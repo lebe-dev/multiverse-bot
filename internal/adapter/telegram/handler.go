@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -36,6 +38,8 @@ func (b *Bot) RegisterHandlers(allowedUsers []string) {
 	})
 
 	b.bot.Handle("/config", b.handleConfigCommand)
+	b.bot.Handle("/cookies", b.handleCookiesStatus)
+	b.bot.Handle(tele.OnDocument, b.handleDocument)
 	b.bot.Handle(tele.OnText, b.handleText)
 }
 
@@ -46,7 +50,7 @@ func (b *Bot) handleText(c tele.Context) error {
 	}
 
 	// Send acknowledgment message
-	statusMsg, err := c.Send("Processing your video...\nDetecting platform...")
+	statusMsg, err := b.bot.Send(c.Recipient(), "Processing your video...\nDetecting platform...")
 	if err != nil {
 		b.log.Error("failed to send status message", "error", err)
 	}
@@ -151,6 +155,64 @@ func (b *Bot) handleError(c tele.Context, err error) error {
 
 func isURL(s string) bool {
 	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
+func (b *Bot) handleCookiesStatus(c tele.Context) error {
+	if !b.IsAdmin(c.Sender().Username) {
+		return c.Send("You don't have permission to use this command.")
+	}
+	info, err := os.Stat(b.cookiesFile)
+	if err == nil {
+		return c.Send(fmt.Sprintf("Cookies file loaded ✅\nPath: <code>%s</code>\nSize: %d bytes\n\nTo update — send a new cookies.txt file.", b.cookiesFile, info.Size()), &tele.SendOptions{ParseMode: tele.ModeHTML})
+	}
+	return c.Send("No cookies file found ❌\n\nSend a <code>cookies.txt</code> file (Netscape format) to this chat to enable YouTube downloads.", &tele.SendOptions{ParseMode: tele.ModeHTML})
+}
+
+// maxCookiesFileSize limits cookie uploads to 1 MB.
+const maxCookiesFileSize = 1 * 1024 * 1024
+
+func (b *Bot) handleDocument(c tele.Context) error {
+	doc := c.Message().Document
+	if doc == nil {
+		return nil
+	}
+
+	if !b.IsAdmin(c.Sender().Username) {
+		if doc.FileName == "cookies.txt" {
+			return c.Send("You don't have permission to upload cookies.")
+		}
+		return nil
+	}
+
+	if doc.FileName != "cookies.txt" {
+		return c.Send("Please send a file named <code>cookies.txt</code>.", &tele.SendOptions{ParseMode: tele.ModeHTML})
+	}
+
+	if doc.FileSize > maxCookiesFileSize {
+		return c.Send("Cookies file is too large (max 1 MB).")
+	}
+
+	reader, err := b.bot.File(&doc.File)
+	if err != nil {
+		b.log.Error("failed to get file from Telegram", "error", err)
+		return c.Send("Failed to get file from Telegram.")
+	}
+	defer reader.Close()
+
+	f, err := os.Create(b.cookiesFile)
+	if err != nil {
+		b.log.Error("failed to save cookies file", "error", err)
+		return c.Send("Failed to save cookies file on server.")
+	}
+	defer f.Close()
+
+	if _, err := io.Copy(f, io.LimitReader(reader, maxCookiesFileSize)); err != nil {
+		b.log.Error("failed to write cookies file", "error", err)
+		return c.Send("Failed to write cookies file.")
+	}
+
+	b.log.Info("cookies file updated", "path", b.cookiesFile)
+	return c.Send("Cookies file saved successfully ✅\nYouTube downloads will now use these cookies.")
 }
 
 func (b *Bot) handleConfigCommand(c tele.Context) error {
