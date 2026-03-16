@@ -22,13 +22,15 @@ var qualityFormats = []string{
 }
 
 type Downloader struct {
+	execPath    string
 	cookiesFile string
 	maxSize     int64
 	supported   map[domain.Platform]bool
 }
 
-func New(cookiesFile string, maxSize int64) *Downloader {
+func New(execPath, cookiesFile string, maxSize int64) *Downloader {
 	return &Downloader{
+		execPath:    execPath,
 		cookiesFile: cookiesFile,
 		maxSize:     maxSize,
 		supported: map[domain.Platform]bool{
@@ -77,7 +79,7 @@ func (d *Downloader) tryDownload(ctx context.Context, url, format string) (*doma
 	outputTemplate := filepath.Join(tmpDir, "%(id)s.%(ext)s")
 
 	cmd := ytdlp.New().
-		SetExecutable("/usr/local/bin/yt-dlp").
+		SetExecutable(d.execPath).
 		Format(format).
 		Output(outputTemplate).
 		NoPlaylist().
