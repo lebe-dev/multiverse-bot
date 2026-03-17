@@ -20,6 +20,7 @@ import (
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/threads"
 	ytdlpdl "gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/ytdlp"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/gdrive"
+	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/plugin"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/store/sqlite"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/telegram"
 	youtubewatcher "gitlab.com/tiny-services/multiverse-bot/internal/adapter/watcher/youtube"
@@ -27,7 +28,7 @@ import (
 	"gitlab.com/tiny-services/multiverse-bot/internal/usecase"
 )
 
-const Version = "0.6.0"
+const Version = "0.7.0"
 
 func main() {
 	cfg, err := config.Load()
@@ -131,6 +132,17 @@ func main() {
 		driveMgr := gdrive.NewManager(cfg.GoogleClientID, cfg.GoogleClientSecret, tokenStore, log)
 		bot.SetDrive(driveMgr)
 		log.Info("google drive OAuth enabled (device flow)")
+	}
+
+	// ── Plugins ──────────────────────────────────────────────────────────────
+	if cfg.PluginsConfig != "" {
+		registry, err := plugin.LoadRegistry(cfg.PluginsConfig, log)
+		if err != nil {
+			log.Warn("failed to load plugins", "error", err)
+		} else {
+			bot.SetPlugins(registry)
+			log.Info("plugins loaded", "count", len(registry.AllManifests()))
+		}
 	}
 
 	bot.RegisterHandlers(cfg.AllowedUsers)

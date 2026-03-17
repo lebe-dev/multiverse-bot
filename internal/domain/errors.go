@@ -13,4 +13,7 @@ var (
 	ErrMaxSubscriptions  = errors.New("subscription limit reached")
 	ErrChannelNotFound   = errors.New("channel not found")
 	ErrMaxChannels       = errors.New("global channel limit reached")
+
+	ErrPluginUnavailable = errors.New("plugin unavailable")
+	ErrPluginTimeout     = errors.New("plugin timed out")
 )

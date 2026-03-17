@@ -10,6 +10,7 @@ require (
 	golang.org/x/sync v0.20.0
 	google.golang.org/api v0.272.0
 	gopkg.in/telebot.v4 v4.0.0-beta.7
+	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.47.0
 )
 

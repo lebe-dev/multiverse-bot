@@ -34,6 +34,7 @@ just docker-logs  # tail bot logs
 | `THREADS_ENGINE` | no | `default` | Threads engine: `default` (direct scraping with uTLS) or `lovethreads` (lovethreads.net proxy) |
 | `YOUTUBE_ENGINE` | no | `default` | YouTube engine: `default` (yt-dlp) or `savevids` (vidssave.com API) |
 | `BROWSER_USER_AGENT` | no | Chrome 131 UA | Browser User-Agent for Threads requests (only used with `default` engine) |
+| `PLUGINS_CONFIG` | no | — | Path to `plugins.yml` for plugin extensibility |
 
 Copy `.env-example` to `.env` to get started.
 
@@ -55,6 +56,7 @@ internal/
       lovethreads/ # Threads via lovethreads.net proxy service
       cobalt/      # Cobalt API backend (Instagram, Twitter, Threads)
       composite/ # Fan-out: tries each backend in order until one succeeds
+    plugin/    # Plugin extensibility (HTTP client, registry, executor)
     telegram/    # telebot.v4 bot, handlers, middleware
 cmd/bot/main.go  # Wires everything together
 ```
@@ -66,3 +68,4 @@ cmd/bot/main.go  # Wires everything together
 - **`VideoService.ProcessURL`** returns a cleanup `func()` that must be called after the video is sent — it deletes the temp dir.
 - **File size limit** is hardcoded to 50 MB (Telegram bot API limit). `MAX_FILE_SIZE` env var field exists in the struct but is not yet exposed.
 - **`ALLOWED_USERS`** middleware short-circuits at the Telegram handler layer; if the list is empty, all users are allowed.
+- **Plugin system** — external HTTP services extend the bot with new commands and URL handlers. Declared in `plugins.yml`, loaded at startup. Built-in commands/platforms always take priority. See `ARCH.md` for full spec.

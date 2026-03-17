@@ -35,23 +35,7 @@ func (b *Bot) RegisterHandlers(allowedUsers []string) {
 		b.bot.Use(whitelistMiddleware(allowed, b.log))
 	}
 
-	b.bot.Handle("/start", func(c tele.Context) error {
-		msg := "Multiverse Bot\n\n" +
-			"Платформы: YouTube, Instagram, X (Twitter), Threads\n\n" +
-			"Команды:\n" +
-			"/watch <url> — подписаться на YouTube-канал\n" +
-			"/settings — настройки (качество, подпись)\n" +
-			"/details <url> — доступные форматы и размеры\n" +
-			"/save [url] — сохранить в Google Drive\n" +
-			"/auth — подключить Google Drive\n" +
-			"/disconnect — отключить Google Drive\n"
-		if b.IsAdmin(c.Sender().Username) {
-			msg += "\nАдмин:\n" +
-				"/config — статус бота и место на диске\n" +
-				"/cookies — статус cookies.txt (отправь файл для обновления)"
-		}
-		return c.Send(msg)
-	})
+	b.bot.Handle("/start", b.handleStartCommand)
 
 	b.bot.Handle("/settings", b.handleSettingsCommand)
 	b.bot.Handle("/config", b.handleConfigCommand)
@@ -60,9 +44,51 @@ func (b *Bot) RegisterHandlers(allowedUsers []string) {
 	b.bot.Handle("/save", b.handleSaveCommand)
 	b.bot.Handle("/auth", b.handleAuthCommand)
 	b.bot.Handle("/disconnect", b.handleDisconnectCommand)
+
+	// Register plugin commands.
+	if b.plugins != nil {
+		for _, m := range b.plugins.AllManifests() {
+			for _, cmd := range m.Commands {
+				pluginName := m.Name
+				command := cmd.Command
+				b.bot.Handle(command, func(c tele.Context) error {
+					return b.handlePluginCommand(c, pluginName, command)
+				})
+			}
+		}
+	}
+
 	b.bot.Handle(tele.OnDocument, b.handleDocument)
 	b.bot.Handle(tele.OnText, b.handleText)
 	b.bot.Handle(tele.OnCallback, b.handleCallback)
+}
+
+func (b *Bot) handleStartCommand(c tele.Context) error {
+	msg := "Multiverse Bot\n\n" +
+		"Платформы: YouTube, Instagram, X (Twitter), Threads\n\n" +
+		"Команды:\n" +
+		"/watch <url> — подписаться на YouTube-канал\n" +
+		"/settings — настройки (качество, подпись)\n" +
+		"/details <url> — доступные форматы и размеры\n" +
+		"/save [url] — сохранить в Google Drive\n" +
+		"/auth — подключить Google Drive\n" +
+		"/disconnect — отключить Google Drive\n"
+
+	// Show plugin commands in help.
+	if b.plugins != nil {
+		for _, m := range b.plugins.AllManifests() {
+			for _, cmd := range m.Commands {
+				msg += fmt.Sprintf("%s — %s\n", cmd.Command, cmd.Description)
+			}
+		}
+	}
+
+	if b.IsAdmin(c.Sender().Username) {
+		msg += "\nАдмин:\n" +
+			"/config — статус бота и место на диске\n" +
+			"/cookies — статус cookies.txt (отправь файл для обновления)"
+	}
+	return c.Send(msg)
 }
 
 // ── Main video handler ────────────────────────────────────────────────────────
@@ -118,6 +144,13 @@ func (b *Bot) handleText(c tele.Context) error {
 	if cleanup == nil {
 		video, svcCleanup, svcErr := b.service.ProcessURL(dlCtx, url)
 		if svcErr != nil {
+			// If built-in fails with ErrUnsupportedPlatform, try plugins.
+			if errors.Is(svcErr, domain.ErrUnsupportedPlatform) && b.plugins != nil {
+				if pluginClient, pluginName, matchedPattern := b.plugins.FindByURL(url); pluginClient != nil {
+					b.deleteMsg(statusMsg)
+					return b.handlePluginURL(c, pluginClient, pluginName, url, matchedPattern)
+				}
+			}
 			b.deleteMsg(statusMsg)
 			return b.handleError(c, svcErr)
 		}
@@ -248,6 +281,16 @@ func (b *Bot) handleCallback(c tele.Context) error {
 		return b.handleDownloadCallback(c, strings.TrimPrefix(data, "dl:"))
 	case strings.HasPrefix(data, "watch_rm:"):
 		return b.handleUnsubscribeCallback(c, strings.TrimPrefix(data, "watch_rm:"))
+	}
+
+	// Plugin callbacks use "p_<name>|<callback_id>" format.
+	if strings.HasPrefix(data, "p_") && b.plugins != nil {
+		rest := strings.TrimPrefix(data, "p_")
+		if idx := strings.Index(rest, "|"); idx > 0 {
+			pluginName := rest[:idx]
+			callbackID := rest[idx+1:]
+			return b.handlePluginCallback(c, pluginName, callbackID)
+		}
 	}
 
 	// Settings callbacks use telebot.v4 "\f{unique}|{payload}" format.

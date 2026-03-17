@@ -1,0 +1,19 @@
+# Plugin configuration for multiverse-bot.
+# Copy to plugins.yml and set PLUGINS_CONFIG=./plugins.yml
+#
+# Each plugin runs as an external HTTP service and must implement:
+#   GET  /health    — health check
+#   GET  /manifest  — capabilities declaration
+#   POST /execute   — handle command or URL trigger
+#   POST /callback  — handle inline button callback
+
+plugins:
+  - name: tiktok
+    url: http://plugin-tiktok:8080
+    enabled: true
+    timeout: 30s
+
+  # - name: summarize
+  #   url: http://plugin-summarize:8080
+  #   enabled: true
+  #   timeout: 60s

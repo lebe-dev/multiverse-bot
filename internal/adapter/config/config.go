@@ -35,6 +35,9 @@ type Config struct {
 	SettingsFile    string // per-user quality/caption prefs
 	DriveTokensFile string // per-user Google Drive OAuth tokens
 
+	// Plugins
+	PluginsConfig string // path to plugins.yml
+
 	// YouTube watcher
 	WatchPollInterval     time.Duration
 	WatchMaxSubs          int
@@ -68,6 +71,8 @@ func Load() (*Config, error) {
 		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
 		SettingsFile:       getEnvOrDefault("SETTINGS_FILE", "./user_settings.json"),
 		DriveTokensFile:    getEnvOrDefault("DRIVE_TOKENS_FILE", "./user_drive_tokens.json"),
+
+		PluginsConfig: os.Getenv("PLUGINS_CONFIG"),
 
 		WatchPollInterval:     parseDuration(os.Getenv("WATCH_POLL_INTERVAL"), "15m"),
 		WatchMaxSubs:          parseInt(os.Getenv("WATCH_MAX_SUBSCRIPTIONS"), 20),

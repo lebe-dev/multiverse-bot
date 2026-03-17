@@ -23,6 +23,7 @@ type Bot struct {
 
 	qualityDl domain.QualityDownloader // for quality selection and format analysis
 	drive     domain.DriveManager      // per-user Google Drive upload
+	plugins   domain.PluginRegistry    // nil when no plugins configured
 
 	version     string
 	tgLimit     int64
@@ -77,6 +78,10 @@ func (b *Bot) SetDrive(d domain.DriveManager) {
 
 func (b *Bot) SetSettings(s *SettingsStore) {
 	b.settings = s
+}
+
+func (b *Bot) SetPlugins(r domain.PluginRegistry) {
+	b.plugins = r
 }
 
 func (b *Bot) SetAdminUsers(admins []string) {
