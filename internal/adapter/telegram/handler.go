@@ -15,6 +15,7 @@ import (
 
 	tele "gopkg.in/telebot.v4"
 
+	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/probe"
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 )
 
@@ -209,7 +210,12 @@ func (b *Bot) handleText(c tele.Context) error {
 
 func (b *Bot) sendVideo(client *tele.Bot, c tele.Context, filePath, caption string) error {
 	_ = c.Notify(tele.UploadingVideo)
-	video := &tele.Video{File: tele.FromDisk(filePath)}
+	w, h := probe.VideoDimensions(context.Background(), filePath)
+	video := &tele.Video{
+		File:   tele.FromDisk(filePath),
+		Width:  w,
+		Height: h,
+	}
 	if caption != "" {
 		video.Caption = caption
 	}
