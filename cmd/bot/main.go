@@ -103,11 +103,6 @@ func main() {
 		}
 	}
 
-	if cfg.GDriveFolderID != "" {
-		bot.SetGDrive(gdrive.New(cfg.GDriveKeyFile, cfg.GDriveFolderID))
-		log.Info("google drive enabled", "folder", cfg.GDriveFolderID)
-	}
-
 	// ── Per-user OAuth2 for Google Drive (Device Flow — no HTTP server needed) ─
 	if cfg.GoogleClientID != "" && cfg.GoogleClientSecret != "" {
 		tokenStore := gdrive.NewTokenStore(cfg.DriveTokensFile)

@@ -6,7 +6,6 @@
 !CLAUDE.md
 /.env
 /bin
-/gdrive-key.json
 
 # Runtime data — user preferences and tokens, never commit
 /user_settings.json

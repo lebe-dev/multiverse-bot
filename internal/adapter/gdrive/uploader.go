@@ -7,53 +7,7 @@ import (
 	"path/filepath"
 
 	"google.golang.org/api/drive/v3"
-	"google.golang.org/api/option"
 )
-
-type Uploader struct {
-	keyFile  string
-	folderID string
-}
-
-func New(keyFile, folderID string) *Uploader {
-	return &Uploader{keyFile: keyFile, folderID: folderID}
-}
-
-// Upload uploads the file to the configured shared folder using a service account.
-// Returns a public share link.
-func (u *Uploader) Upload(ctx context.Context, filePath string) (string, error) {
-	svc, err := drive.NewService(ctx,
-		option.WithCredentialsFile(u.keyFile),
-		option.WithScopes(drive.DriveFileScope),
-	)
-	if err != nil {
-		return "", fmt.Errorf("creating drive service: %w", err)
-	}
-
-	f, err := os.Open(filePath)
-	if err != nil {
-		return "", fmt.Errorf("opening file: %w", err)
-	}
-	defer f.Close()
-
-	file, err := svc.Files.Create(&drive.File{
-		Name:    filepath.Base(filePath),
-		Parents: []string{u.folderID},
-	}).Media(f).Context(ctx).Do()
-	if err != nil {
-		return "", fmt.Errorf("uploading to drive: %w", err)
-	}
-
-	_, err = svc.Permissions.Create(file.Id, &drive.Permission{
-		Type: "anyone",
-		Role: "reader",
-	}).Context(ctx).Do()
-	if err != nil {
-		return "", fmt.Errorf("setting permissions: %w", err)
-	}
-
-	return fmt.Sprintf("https://drive.google.com/file/d/%s/view", file.Id), nil
-}
 
 // UploadUserFile uploads filePath into the user's "Multiverse Bot" folder on their Drive.
 // The folder is created automatically on first use and reused on subsequent uploads.

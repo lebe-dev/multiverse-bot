@@ -25,9 +25,6 @@ type Config struct {
 	BrowserUserAgent string
 	ThreadsEngine    string
 	YouTubeEngine    string
-	GDriveKeyFile    string
-	GDriveFolderID   string
-
 	// Per-user OAuth2 for Google Drive via Device Flow (drive.file scope).
 	// Requires a "TVs and Limited Input devices" OAuth2 client in Google Cloud Console.
 	GoogleClientID     string
@@ -59,9 +56,6 @@ func Load() (*Config, error) {
 		BrowserUserAgent: getEnvOrDefault("BROWSER_USER_AGENT", defaultBrowserUserAgent),
 		ThreadsEngine:    getEnvOrDefault("THREADS_ENGINE", "default"),
 		YouTubeEngine:    getEnvOrDefault("YOUTUBE_ENGINE", "default"),
-		GDriveKeyFile:    getEnvOrDefault("GDRIVE_KEY_FILE", "./gdrive-key.json"),
-		GDriveFolderID:   os.Getenv("GDRIVE_FOLDER_ID"),
-
 		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
 		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
 

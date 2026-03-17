@@ -49,8 +49,7 @@ func (b *Bot) RegisterHandlers(allowedUsers []string) {
 		if b.IsAdmin(c.Sender().Username) {
 			msg += "\nАдмин:\n" +
 				"/config — статус бота и место на диске\n" +
-				"/cookies — статус cookies.txt (отправь файл для обновления)\n" +
-				"/gdrive_test — тест загрузки в Google Drive"
+				"/cookies — статус cookies.txt (отправь файл для обновления)"
 		}
 		return c.Send(msg)
 	})
@@ -58,7 +57,6 @@ func (b *Bot) RegisterHandlers(allowedUsers []string) {
 	b.bot.Handle("/settings", b.handleSettingsCommand)
 	b.bot.Handle("/config", b.handleConfigCommand)
 	b.bot.Handle("/cookies", b.handleCookiesStatus)
-	b.bot.Handle("/gdrive_test", b.handleGDriveTest)
 	b.bot.Handle("/details", b.handleDetailsCommand)
 	b.bot.Handle("/save", b.handleSaveCommand)
 	b.bot.Handle("/auth", b.handleAuthCommand)
@@ -320,15 +318,13 @@ func (b *Bot) handleDetailsCommand(c tele.Context) error {
 }
 
 func (b *Bot) handleSaveCommand(c tele.Context) error {
-	userID := c.Sender().ID
-	hasOAuth := b.oauth != nil && b.oauth.IsConnected(userID)
-	hasServiceAccount := b.gdrive != nil
-
-	if !hasOAuth && !hasServiceAccount {
-		if b.oauth != nil {
-			return c.Send("⚙️ Google Drive не подключён.\n\nИспользуйте /auth чтобы подключить свой Google Drive.")
-		}
+	if b.oauth == nil {
 		return c.Send("⚙️ Google Drive не настроен.")
+	}
+
+	userID := c.Sender().ID
+	if !b.oauth.IsConnected(userID) {
+		return c.Send("⚙️ Google Drive не подключён.\n\nИспользуйте /auth чтобы подключить свой Google Drive.")
 	}
 
 	// Use provided URL or fall back to last sent URL for this user
@@ -363,20 +359,13 @@ func (b *Bot) handleSaveCommand(c tele.Context) error {
 	bestMB := best.Size / (1024 * 1024)
 	b.editMsg(statusMsg, fmt.Sprintf("☁️ Загружаю %d МБ в Google Drive...", bestMB))
 
-	var link string
-	if hasOAuth {
-		// Per-user OAuth: file goes to their own Google Drive
-		svc, svcErr := b.oauth.DriveService(ctx, userID)
-		if svcErr != nil {
-			b.deleteMsg(statusMsg)
-			return c.Send("⚠️ Сессия Google Drive устарела. Используйте /auth для повторной авторизации.")
-		}
-		link, err = gdrive.UploadUserFile(ctx, svc, best.Title, best.FilePath)
-	} else {
-		// Fallback: shared service account folder
-		link, err = b.gdrive.Upload(ctx, best.FilePath)
+	svc, svcErr := b.oauth.DriveService(ctx, userID)
+	if svcErr != nil {
+		b.deleteMsg(statusMsg)
+		return c.Send("⚠️ Сессия Google Drive устарела. Используйте /auth для повторной авторизации.")
 	}
 
+	link, err := gdrive.UploadUserFile(ctx, svc, best.Title, best.FilePath)
 	b.deleteMsg(statusMsg)
 	if err != nil {
 		b.log.Error("gdrive upload failed", "error", err)
@@ -527,33 +516,6 @@ func (b *Bot) handleError(c tele.Context, err error) error {
 
 // ── Admin commands ────────────────────────────────────────────────────────────
 
-func (b *Bot) handleGDriveTest(c tele.Context) error {
-	if !b.IsAdmin(c.Sender().Username) {
-		return c.Send("❌ Нет доступа.")
-	}
-	if b.gdrive == nil {
-		return c.Send("Google Drive не настроен.")
-	}
-	_ = c.Send("Загружаю тестовый файл...")
-	tmpFile, err := os.CreateTemp("", "gdrive-test-*.txt")
-	if err != nil {
-		return c.Send("Не удалось создать тестовый файл: " + err.Error())
-	}
-	defer os.Remove(tmpFile.Name())
-	_, _ = tmpFile.WriteString("Google Drive test upload from multiverse-bot ✅")
-	_ = tmpFile.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	link, err := b.gdrive.Upload(ctx, tmpFile.Name())
-	if err != nil {
-		b.log.Error("gdrive test failed", "error", err)
-		return c.Send(fmt.Sprintf("❌ Ошибка:\n<code>%v</code>", err),
-			&tele.SendOptions{ParseMode: tele.ModeHTML})
-	}
-	return c.Send("✅ Google Drive работает!\n\n" + link)
-}
 
 func (b *Bot) handleConfigCommand(c tele.Context) error {
 	if !b.IsAdmin(c.Sender().Username) {
@@ -568,10 +530,10 @@ func (b *Bot) handleConfigCommand(c tele.Context) error {
 	} else {
 		sb.WriteString("Local Bot API: <code>отключён</code>\n")
 	}
-	if b.gdrive != nil {
-		sb.WriteString("Google Drive: <code>включён ✅</code>\n")
+	if b.oauth != nil {
+		sb.WriteString("Google Drive OAuth: <code>включён ✅</code>\n")
 	} else {
-		sb.WriteString("Google Drive: <code>отключён</code>\n")
+		sb.WriteString("Google Drive OAuth: <code>отключён</code>\n")
 	}
 	if free, err := freeDiskBytes("."); err == nil {
 		fmt.Fprintf(&sb, "Диск свободно: <code>%d МБ</code>\n", free/(1024*1024))
