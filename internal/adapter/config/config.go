@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -17,12 +18,20 @@ type Config struct {
 	AllowedUsers     []string
 	AdminUsers       []string
 	CobaltAPIURL     string
-	MaxFileSize      int64
+	TGLimit          int64  // max file size for standard Telegram API (bytes)
+	LocalBotAPIURL   string // local Telegram Bot API server URL for large files
 	CookiesFile      string
 	YtdlpPath        string
 	BrowserUserAgent string
 	ThreadsEngine    string
 	YouTubeEngine    string
+	GDriveKeyFile    string
+	GDriveFolderID   string
+
+	// Per-user OAuth2 for Google Drive via Device Flow (drive.file scope).
+	// Requires a "Desktop app" OAuth2 client in Google Cloud Console — no redirect URI needed.
+	GoogleClientID     string
+	GoogleClientSecret string
 }
 
 func Load() (*Config, error) {
@@ -39,15 +48,33 @@ func Load() (*Config, error) {
 		AllowedUsers:     parseAllowedUsers(os.Getenv("ALLOWED_USERS")),
 		AdminUsers:       parseAllowedUsers(os.Getenv("ADMIN_USERS")),
 		CobaltAPIURL:     getEnvOrDefault("COBALT_API_URL", "https://api.cobalt.tools"),
-		MaxFileSize:      50 * 1024 * 1024, // 50MB
+		TGLimit:          parseMegabytes("TG_LIMIT", 50),
+		LocalBotAPIURL:   os.Getenv("LOCAL_BOT_API_URL"),
 		CookiesFile:      getEnvOrDefault("YTDLP_COOKIES_FILE", "./cookies.txt"),
 		YtdlpPath:        getEnvOrDefault("YTDLP_PATH", "yt-dlp"),
 		BrowserUserAgent: getEnvOrDefault("BROWSER_USER_AGENT", defaultBrowserUserAgent),
 		ThreadsEngine:    getEnvOrDefault("THREADS_ENGINE", "default"),
 		YouTubeEngine:    getEnvOrDefault("YOUTUBE_ENGINE", "default"),
+		GDriveKeyFile:    getEnvOrDefault("GDRIVE_KEY_FILE", "./gdrive-key.json"),
+		GDriveFolderID:   os.Getenv("GDRIVE_FOLDER_ID"),
+
+		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
 	}
 
 	return cfg, nil
+}
+
+// parseMegabytes reads an env var as a megabyte integer and returns bytes.
+func parseMegabytes(key string, defaultMB int64) int64 {
+	v := os.Getenv(key)
+	// strip optional "MB" suffix
+	v = strings.TrimSuffix(strings.TrimSpace(v), "MB")
+	v = strings.TrimSuffix(v, "mb")
+	if n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil && n > 0 {
+		return n * 1024 * 1024
+	}
+	return defaultMB * 1024 * 1024
 }
 
 func parseLogLevel(s string) slog.Level {

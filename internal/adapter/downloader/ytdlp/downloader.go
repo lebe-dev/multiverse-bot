@@ -2,37 +2,61 @@ package ytdlp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/lrstanley/go-ytdlp"
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 )
 
-// qualityFormats lists format selectors from best to worst quality.
-// The downloader tries each in order until the file fits within maxSize.
-var qualityFormats = []string{
-	"bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-	"bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]",
-	"bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]",
-	"bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best[height<=360]",
-	"worst[ext=mp4]/worst",
+// format720 downloads the best quality that fits within 720p.
+// Size management and API selection are handled in the Telegram handler.
+const format720 = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]"
+
+// formatBest downloads the highest available quality (for Google Drive archive).
+const formatBest = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+
+// FormatEntry is a single available resolution with its estimated size.
+type FormatEntry struct {
+	Height int
+	Size   int64 // bytes, 0 if unknown
 }
+
+// FormatSummary holds key size information extracted from yt-dlp format metadata.
+type FormatSummary struct {
+	Title    string
+	Duration float64 // seconds
+
+	MinHeight int
+	MinSize   int64 // bytes, 0 if unknown
+
+	P720Height int
+	P720Size   int64
+
+	MaxHeight int
+	MaxSize   int64
+
+	// Entries lists all available video resolutions sorted by height ascending.
+	Entries []FormatEntry
+}
+
+// ── Downloader struct ─────────────────────────────────────────────────────────
 
 type Downloader struct {
 	execPath    string
 	cookiesFile string
-	maxSize     int64
 	supported   map[domain.Platform]bool
 }
 
-func New(execPath, cookiesFile string, maxSize int64) *Downloader {
+func New(execPath, cookiesFile string, _ int64) *Downloader {
 	return &Downloader{
 		execPath:    execPath,
 		cookiesFile: cookiesFile,
-		maxSize:     maxSize,
 		supported: map[domain.Platform]bool{
 			domain.PlatformYouTube:   true,
 			domain.PlatformInstagram: true,
@@ -46,31 +70,63 @@ func (d *Downloader) Supports(p domain.Platform) bool {
 	return d.supported[p]
 }
 
-// normalizeURL rewrites known domain aliases to the canonical form expected by yt-dlp.
-// yt-dlp's Threads extractor only matches threads.net, not threads.com.
-func normalizeURL(url string) string {
-	return strings.ReplaceAll(url, "threads.com/", "threads.net/")
+// Download downloads at 720p — the standard quality for Telegram delivery.
+func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, error) {
+	return d.download(ctx, normalizeURL(url), format720)
 }
 
-func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, error) {
+// DownloadBest downloads at the highest available quality — used for Google Drive.
+func (d *Downloader) DownloadBest(ctx context.Context, url string) (*domain.Video, error) {
+	return d.download(ctx, normalizeURL(url), formatBest)
+}
+
+// DownloadQuality downloads at the given quality ("360p", "480p", "720p", "1080p").
+// Falls back to 720p for unknown values.
+func (d *Downloader) DownloadQuality(ctx context.Context, url, quality string) (*domain.Video, error) {
+	return d.download(ctx, normalizeURL(url), qualityFormat(quality))
+}
+
+// qualityFormat returns the yt-dlp format selector for the given quality level.
+func qualityFormat(quality string) string {
+	switch quality {
+	case "360p":
+		return "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best[height<=360]"
+	case "480p":
+		return "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]"
+	case "1080p":
+		return "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best[height<=1080]"
+	default: // "720p"
+		return format720
+	}
+}
+
+// AnalyzeFormats runs yt-dlp --dump-json and returns a compact format summary
+// without downloading the video.
+func (d *Downloader) AnalyzeFormats(ctx context.Context, url string) (*FormatSummary, error) {
 	url = normalizeURL(url)
 
-	for _, format := range qualityFormats {
-		video, err := d.tryDownload(ctx, url, format)
-		if err != nil {
-			return nil, err
-		}
-		if d.maxSize <= 0 || video.Size <= d.maxSize {
-			return video, nil
-		}
-		// File too large — clean up and try lower quality
-		_ = os.RemoveAll(filepath.Dir(video.FilePath))
+	args := []string{"--dump-json", "--no-playlist", "--no-warnings", "--js-runtimes", "node"}
+	if _, err := os.Stat(d.cookiesFile); err == nil {
+		args = append(args, "--cookies", d.cookiesFile)
+	}
+	args = append(args, url)
+
+	out, err := exec.CommandContext(ctx, d.execPath, args...).Output()
+	if err != nil {
+		return nil, fmt.Errorf("%w: yt-dlp dump-json: %v", domain.ErrDownloadFailed, err)
 	}
 
-	return nil, fmt.Errorf("%w: video is too large even at lowest quality", domain.ErrDownloadFailed)
+	var info ytdlpJSON
+	if err := json.Unmarshal(out, &info); err != nil {
+		return nil, fmt.Errorf("%w: parse yt-dlp json: %v", domain.ErrDownloadFailed, err)
+	}
+
+	return buildSummary(&info), nil
 }
 
-func (d *Downloader) tryDownload(ctx context.Context, url, format string) (*domain.Video, error) {
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
+func (d *Downloader) download(ctx context.Context, url, format string) (*domain.Video, error) {
 	tmpDir, err := os.MkdirTemp("", "multiverse-ytdlp-*")
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
@@ -83,13 +139,15 @@ func (d *Downloader) tryDownload(ctx context.Context, url, format string) (*doma
 		Format(format).
 		Output(outputTemplate).
 		NoPlaylist().
-		JsRuntimes("node")
+		JsRuntimes("node").
+		Print("after_move:%(title)s")
 
 	if _, err := os.Stat(d.cookiesFile); err == nil {
 		cmd = cmd.Cookies(d.cookiesFile)
 	}
 
-	if _, err = cmd.Run(ctx, url); err != nil {
+	result, err := cmd.Run(ctx, url)
+	if err != nil {
 		_ = os.RemoveAll(tmpDir)
 		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
 	}
@@ -101,7 +159,7 @@ func (d *Downloader) tryDownload(ctx context.Context, url, format string) (*doma
 	}
 
 	filePath := filepath.Join(tmpDir, entries[0].Name())
-	info, err := os.Stat(filePath)
+	fi, err := os.Stat(filePath)
 	if err != nil {
 		_ = os.RemoveAll(tmpDir)
 		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
@@ -110,6 +168,119 @@ func (d *Downloader) tryDownload(ctx context.Context, url, format string) (*doma
 	return &domain.Video{
 		URL:      url,
 		FilePath: filePath,
-		Size:     info.Size(),
+		Size:     fi.Size(),
+		Title:    strings.TrimSpace(result.Stdout),
 	}, nil
+}
+
+// normalizeURL rewrites threads.com → threads.net (yt-dlp extractor requirement).
+func normalizeURL(url string) string {
+	return strings.ReplaceAll(url, "threads.com/", "threads.net/")
+}
+
+// ── JSON structs for --dump-json output ──────────────────────────────────────
+
+type ytdlpJSON struct {
+	Title    string        `json:"title"`
+	Duration float64       `json:"duration"`
+	TBR      float64       `json:"tbr"`
+	Formats  []ytdlpFormat `json:"formats"`
+}
+
+type ytdlpFormat struct {
+	Height         *int     `json:"height"`
+	VCodec         string   `json:"vcodec"`
+	ACodec         string   `json:"acodec"`
+	FileSize       *int64   `json:"filesize"`
+	FileSizeApprox *int64   `json:"filesize_approx"`
+	TBR            *float64 `json:"tbr"`
+}
+
+// formatSize returns the best available size estimate for a format.
+func (f *ytdlpFormat) formatSize(duration float64) int64 {
+	if f.FileSize != nil && *f.FileSize > 0 {
+		return *f.FileSize
+	}
+	if f.FileSizeApprox != nil && *f.FileSizeApprox > 0 {
+		return *f.FileSizeApprox
+	}
+	// Estimate from bitrate × duration
+	if f.TBR != nil && *f.TBR > 0 && duration > 0 {
+		return int64(*f.TBR * 1000 / 8 * duration)
+	}
+	return 0
+}
+
+func buildSummary(info *ytdlpJSON) *FormatSummary {
+	s := &FormatSummary{
+		Title:    info.Title,
+		Duration: info.Duration,
+	}
+
+	// Find best audio-only stream size (for combining with video-only formats like YouTube 720p+)
+	var audioSize int64
+	for _, f := range info.Formats {
+		if strings.EqualFold(f.VCodec, "none") {
+			sz := f.formatSize(info.Duration)
+			if sz > audioSize {
+				audioSize = sz
+			}
+		}
+	}
+
+	heightMap := make(map[int]int64) // height → best size estimate
+
+	for _, f := range info.Formats {
+		// Skip audio-only and formats without height
+		if f.Height == nil || *f.Height == 0 {
+			continue
+		}
+		if strings.EqualFold(f.VCodec, "none") {
+			continue
+		}
+
+		h := *f.Height
+		sz := f.formatSize(info.Duration)
+
+		// For video-only formats (YouTube 720p/1080p are split streams), add audio size
+		if strings.EqualFold(f.ACodec, "none") && audioSize > 0 {
+			sz += audioSize
+		}
+
+		// Track best size per height for Entries
+		if sz > heightMap[h] {
+			heightMap[h] = sz
+		}
+
+		// Min: smallest height ≥ 240p
+		if h >= 240 && (s.MinHeight == 0 || h < s.MinHeight || (h == s.MinHeight && sz < s.MinSize)) {
+			s.MinHeight = h
+			s.MinSize = sz
+		}
+
+		// 720p: best (highest) height ≤ 720
+		if h <= 720 && (s.P720Height == 0 || h > s.P720Height || (h == s.P720Height && sz > s.P720Size)) {
+			s.P720Height = h
+			s.P720Size = sz
+		}
+
+		// Max: highest resolution (size secondary)
+		if s.MaxHeight == 0 || h > s.MaxHeight || (h == s.MaxHeight && sz > s.MaxSize) {
+			s.MaxHeight = h
+			s.MaxSize = sz
+		}
+	}
+
+	// Build sorted Entries
+	heights := make([]int, 0, len(heightMap))
+	for h := range heightMap {
+		heights = append(heights, h)
+	}
+	sort.Ints(heights)
+	s.Entries = make([]FormatEntry, len(heights))
+	for i, h := range heights {
+		s.Entries[i] = FormatEntry{Height: h, Size: heightMap[h]}
+	}
+
+	return s
 }

@@ -5,4 +5,5 @@ type Video struct {
 	FilePath string
 	Platform Platform
 	Size     int64
+	Title    string
 }

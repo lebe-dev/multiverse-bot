@@ -36,8 +36,8 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.CookiesFile != "./cookies.txt" {
 		t.Errorf("expected default CookiesFile './cookies.txt', got %s", cfg.CookiesFile)
 	}
-	if cfg.MaxFileSize != 50*1024*1024 {
-		t.Errorf("expected MaxFileSize 50MB, got %d", cfg.MaxFileSize)
+	if cfg.TGLimit != 50*1024*1024 {
+		t.Errorf("expected TGLimit 50MB, got %d", cfg.TGLimit)
 	}
 	if cfg.ThreadsEngine != "default" {
 		t.Errorf("expected default ThreadsEngine 'default', got %s", cfg.ThreadsEngine)

@@ -59,11 +59,6 @@ func (s *VideoService) ProcessURL(ctx context.Context, url string) (*domain.Vide
 		_ = os.RemoveAll(dir)
 	}
 
-	if video.Size > s.maxSize {
-		cleanup()
-		return nil, nil, domain.ErrVideoTooLarge
-	}
-
 	video.Platform = platform
 	return video, cleanup, nil
 }

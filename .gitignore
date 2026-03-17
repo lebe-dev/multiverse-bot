@@ -6,3 +6,11 @@
 !CLAUDE.md
 /.env
 /bin
+/gdrive-key.json
+
+# Runtime data — user preferences and tokens, never commit
+/user_settings.json
+/user_drive_tokens.json
+/cookies.txt
+/bot.log
+/bot.pid

@@ -37,7 +37,7 @@ func TestNormalizeURL(t *testing.T) {
 }
 
 func TestNew(t *testing.T) {
-	d := New("/usr/bin/yt-dlp", "/tmp/cookies.txt", 50*1024*1024)
+	d := New("/usr/bin/yt-dlp", "/tmp/cookies.txt", 0)
 
 	if d.execPath != "/usr/bin/yt-dlp" {
 		t.Errorf("expected execPath /usr/bin/yt-dlp, got %s", d.execPath)
@@ -45,23 +45,16 @@ func TestNew(t *testing.T) {
 	if d.cookiesFile != "/tmp/cookies.txt" {
 		t.Errorf("expected cookiesFile /tmp/cookies.txt, got %s", d.cookiesFile)
 	}
-	if d.maxSize != 50*1024*1024 {
-		t.Errorf("expected maxSize 50MB, got %d", d.maxSize)
-	}
 	if !d.Supports(1) { // PlatformYouTube
 		t.Error("expected YouTube to be supported")
 	}
 }
 
-func TestQualityFormats(t *testing.T) {
-	if len(qualityFormats) == 0 {
-		t.Fatal("qualityFormats should not be empty")
+func TestFormats(t *testing.T) {
+	if format720 == "" {
+		t.Error("format720 must not be empty")
 	}
-	// First should be best quality, last should be worst
-	if qualityFormats[0] != "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" {
-		t.Errorf("first format should be best quality, got %s", qualityFormats[0])
-	}
-	if qualityFormats[len(qualityFormats)-1] != "worst[ext=mp4]/worst" {
-		t.Errorf("last format should be worst quality, got %s", qualityFormats[len(qualityFormats)-1])
+	if formatBest == "" {
+		t.Error("formatBest must not be empty")
 	}
 }

@@ -61,7 +61,9 @@ func TestProcessURL_DownloadError(t *testing.T) {
 	}
 }
 
-func TestProcessURL_VideoTooLarge(t *testing.T) {
+// Service no longer enforces file size — that's the handler's responsibility (it can offer Google Drive).
+// This test verifies that large files are returned successfully so the handler can decide what to do.
+func TestProcessURL_LargeVideoReturnedToHandler(t *testing.T) {
 	tmpDir, _ := os.MkdirTemp("", "test-*")
 	tmpFile := filepath.Join(tmpDir, "video.mp4")
 	_ = os.WriteFile(tmpFile, []byte("data"), 0644)
@@ -76,9 +78,13 @@ func TestProcessURL_VideoTooLarge(t *testing.T) {
 		50*1024*1024,
 	)
 
-	_, _, err := svc.ProcessURL(context.Background(), "https://youtube.com/watch?v=abc")
-	if !errors.Is(err, domain.ErrVideoTooLarge) {
-		t.Errorf("expected ErrVideoTooLarge, got %v", err)
+	video, cleanup, err := svc.ProcessURL(context.Background(), "https://youtube.com/watch?v=abc")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	defer cleanup()
+	if video.Size != 100*1024*1024 {
+		t.Errorf("expected size 100MB, got %d", video.Size)
 	}
 }
 

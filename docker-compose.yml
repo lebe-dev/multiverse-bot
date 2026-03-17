@@ -1,31 +1,54 @@
 services:
+
+  # ── Telegram Local Bot API ──────────────────────────────────────────────────
+  # Allows sending files up to 2 GB. Bot connects via LOCAL_BOT_API_URL.
+  telegram-bot-api:
+    image: aiogram/telegram-bot-api:latest
+    restart: unless-stopped
+    environment:
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
+      TELEGRAM_VERBOSITY: "5"
+    volumes:
+      - telegram-bot-api-data:/var/lib/telegram-bot-api
+    ports:
+      - "127.0.0.1:8081:8081"
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 256M
+
+  # ── Bot ─────────────────────────────────────────────────────────────────────
   bot:
-    image: tinyops/multiverse-bot:0.4.0
-    #build: .
+    build: .
     restart: unless-stopped
     env_file:
       - .env
     environment:
       COBALT_API_URL: "http://cobalt:9000"
+      LOCAL_BOT_API_URL: "http://telegram-bot-api:8081"
+    volumes:
+      - ./cookies.txt:/app/cookies.txt:ro
+      - ./gdrive-key.json:/app/gdrive-key.json:ro
     depends_on:
+      - telegram-bot-api
       - cobalt
     deploy:
       resources:
         limits:
-          cpus: "1"
-          memory: 128M
+          cpus: "2"
+          memory: 512M
 
+  # ── Cobalt (Instagram / Twitter downloader) ──────────────────────────────────
   cobalt:
     image: ghcr.io/imputnet/cobalt:11
     init: true
     read_only: true
     restart: unless-stopped
-    container_name: cobalt
     ports:
       - "127.0.0.1:9000:9000"
     environment:
-      # Internal Docker network URL used by cobalt when building tunnel URLs.
-      # Both bot and cobalt share the same network, so this resolves correctly.
       API_URL: "http://cobalt:9000/"
     labels:
       - com.centurylinklabs.watchtower.scope=cobalt
@@ -35,6 +58,7 @@ services:
           cpus: "1"
           memory: 512M
 
+  # ── Watchtower (auto-update cobalt) ─────────────────────────────────────────
   watchtower:
     image: ghcr.io/containrrr/watchtower
     restart: unless-stopped
@@ -46,3 +70,6 @@ services:
         limits:
           cpus: "0.5"
           memory: 64M
+
+volumes:
+  telegram-bot-api-data:

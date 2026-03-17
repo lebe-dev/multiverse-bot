@@ -1,0 +1,129 @@
+package gdrive
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"google.golang.org/api/drive/v3"
+	"google.golang.org/api/option"
+)
+
+type Uploader struct {
+	keyFile  string
+	folderID string
+}
+
+func New(keyFile, folderID string) *Uploader {
+	return &Uploader{keyFile: keyFile, folderID: folderID}
+}
+
+// Upload uploads the file to the configured shared folder using a service account.
+// Returns a public share link.
+func (u *Uploader) Upload(ctx context.Context, filePath string) (string, error) {
+	svc, err := drive.NewService(ctx,
+		option.WithCredentialsFile(u.keyFile),
+		option.WithScopes(drive.DriveFileScope),
+	)
+	if err != nil {
+		return "", fmt.Errorf("creating drive service: %w", err)
+	}
+
+	f, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("opening file: %w", err)
+	}
+	defer f.Close()
+
+	file, err := svc.Files.Create(&drive.File{
+		Name:    filepath.Base(filePath),
+		Parents: []string{u.folderID},
+	}).Media(f).Context(ctx).Do()
+	if err != nil {
+		return "", fmt.Errorf("uploading to drive: %w", err)
+	}
+
+	_, err = svc.Permissions.Create(file.Id, &drive.Permission{
+		Type: "anyone",
+		Role: "reader",
+	}).Context(ctx).Do()
+	if err != nil {
+		return "", fmt.Errorf("setting permissions: %w", err)
+	}
+
+	return fmt.Sprintf("https://drive.google.com/file/d/%s/view", file.Id), nil
+}
+
+// UploadUserFile uploads filePath into the user's "Multiverse Bot" folder on their Drive.
+// The folder is created automatically on first use and reused on subsequent uploads.
+// The file is owned by the user (drive.file scope — bot cannot see their other files).
+// Returns a view link.
+func UploadUserFile(ctx context.Context, svc *drive.Service, title, filePath string) (string, error) {
+	folderID, err := getOrCreateFolder(ctx, svc, "Multiverse Bot")
+	if err != nil {
+		return "", fmt.Errorf("preparing folder: %w", err)
+	}
+
+	f, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("opening file: %w", err)
+	}
+	defer f.Close()
+
+	// Use video title as filename if available, keep original extension.
+	name := filepath.Base(filePath)
+	if title != "" {
+		name = sanitizeFilename(title) + filepath.Ext(filePath)
+	}
+
+	file, err := svc.Files.Create(&drive.File{
+		Name:    name,
+		Parents: []string{folderID},
+	}).Media(f).Context(ctx).Do()
+	if err != nil {
+		return "", fmt.Errorf("uploading to drive: %w", err)
+	}
+
+	return fmt.Sprintf("https://drive.google.com/file/d/%s/view", file.Id), nil
+}
+
+// getOrCreateFolder finds the "Multiverse Bot" folder or creates it.
+// With drive.file scope, Files.List only sees folders the app itself created,
+// so there is no risk of finding a user's unrelated folder with the same name.
+func getOrCreateFolder(ctx context.Context, svc *drive.Service, name string) (string, error) {
+	q := fmt.Sprintf("mimeType='application/vnd.google-apps.folder' and name='%s' and trashed=false", name)
+	list, err := svc.Files.List().Q(q).Fields("files(id)").Context(ctx).Do()
+	if err != nil {
+		return "", fmt.Errorf("listing folders: %w", err)
+	}
+	if len(list.Files) > 0 {
+		return list.Files[0].Id, nil
+	}
+
+	folder, err := svc.Files.Create(&drive.File{
+		Name:     name,
+		MimeType: "application/vnd.google-apps.folder",
+	}).Context(ctx).Do()
+	if err != nil {
+		return "", fmt.Errorf("creating folder: %w", err)
+	}
+	return folder.Id, nil
+}
+
+// sanitizeFilename removes characters that are invalid in Drive file names.
+func sanitizeFilename(s string) string {
+	var out []rune
+	for _, r := range s {
+		switch r {
+		case '/', '\\', ':', '*', '?', '"', '<', '>', '|':
+			out = append(out, '_')
+		default:
+			out = append(out, r)
+		}
+	}
+	if len(out) > 200 {
+		out = out[:200]
+	}
+	return string(out)
+}
