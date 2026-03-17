@@ -93,7 +93,7 @@ func main() {
 	bot.SetConfig(Version, cfg.TGLimit, cfg.CookiesFile)
 	bot.SetYtdlp(ytdlpDownloader)
 	bot.SetAdminUsers(cfg.AdminUsers)
-	bot.SetSettings(telegram.NewSettingsStore("./user_settings.json"))
+	bot.SetSettings(telegram.NewSettingsStore(cfg.SettingsFile))
 
 	if cfg.LocalBotAPIURL != "" {
 		if err := bot.SetLocalBotAPI(cfg.LocalBotAPIURL); err != nil {
@@ -110,7 +110,7 @@ func main() {
 
 	// ── Per-user OAuth2 for Google Drive (Device Flow — no HTTP server needed) ─
 	if cfg.GoogleClientID != "" && cfg.GoogleClientSecret != "" {
-		tokenStore := gdrive.NewTokenStore("./user_drive_tokens.json")
+		tokenStore := gdrive.NewTokenStore(cfg.DriveTokensFile)
 		oauthMgr := gdrive.NewOAuthManager(cfg.GoogleClientID, cfg.GoogleClientSecret, tokenStore)
 		bot.SetOAuth(oauthMgr)
 		log.Info("google drive OAuth enabled (device flow)")

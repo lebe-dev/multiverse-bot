@@ -29,9 +29,13 @@ type Config struct {
 	GDriveFolderID   string
 
 	// Per-user OAuth2 for Google Drive via Device Flow (drive.file scope).
-	// Requires a "Desktop app" OAuth2 client in Google Cloud Console — no redirect URI needed.
+	// Requires a "TVs and Limited Input devices" OAuth2 client in Google Cloud Console.
 	GoogleClientID     string
 	GoogleClientSecret string
+
+	// Storage paths (optional — defaults work for most setups)
+	SettingsFile    string // per-user quality/caption prefs
+	DriveTokensFile string // per-user Google Drive OAuth tokens
 }
 
 func Load() (*Config, error) {
@@ -60,6 +64,9 @@ func Load() (*Config, error) {
 
 		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
 		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+
+		SettingsFile:    getEnvOrDefault("SETTINGS_FILE", "./user_settings.json"),
+		DriveTokensFile: getEnvOrDefault("DRIVE_TOKENS_FILE", "./user_drive_tokens.json"),
 	}
 
 	return cfg, nil
