@@ -12,6 +12,7 @@ import (
 
 	tele "gopkg.in/telebot.v4"
 
+	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/probe"
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 )
 
@@ -107,8 +108,11 @@ func (b *Bot) handleText(c tele.Context) error {
 		b.log.Error("failed to send upload action", "error", err)
 	}
 
+	w, h := probe.VideoDimensions(ctx, video.FilePath)
 	return c.Send(&tele.Video{
-		File: tele.FromDisk(video.FilePath),
+		File:   tele.FromDisk(video.FilePath),
+		Width:  w,
+		Height: h,
 	})
 }
 
