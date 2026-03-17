@@ -37,7 +37,7 @@ func TestNormalizeURL(t *testing.T) {
 }
 
 func TestNew(t *testing.T) {
-	d := New("/usr/bin/yt-dlp", "/tmp/cookies.txt", 0)
+	d := New("/usr/bin/yt-dlp", "/tmp/cookies.txt")
 
 	if d.execPath != "/usr/bin/yt-dlp" {
 		t.Errorf("expected execPath /usr/bin/yt-dlp, got %s", d.execPath)

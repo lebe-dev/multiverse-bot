@@ -15,37 +15,10 @@ import (
 )
 
 // format720 downloads the best quality that fits within 720p.
-// Size management and API selection are handled in the Telegram handler.
 const format720 = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]"
 
 // formatBest downloads the highest available quality (for Google Drive archive).
 const formatBest = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
-
-// FormatEntry is a single available resolution with its estimated size.
-type FormatEntry struct {
-	Height int
-	Size   int64 // bytes, 0 if unknown
-}
-
-// FormatSummary holds key size information extracted from yt-dlp format metadata.
-type FormatSummary struct {
-	Title    string
-	Duration float64 // seconds
-
-	MinHeight int
-	MinSize   int64 // bytes, 0 if unknown
-
-	P720Height int
-	P720Size   int64
-
-	MaxHeight int
-	MaxSize   int64
-
-	// Entries lists all available video resolutions sorted by height ascending.
-	Entries []FormatEntry
-}
-
-// ── Downloader struct ─────────────────────────────────────────────────────────
 
 type Downloader struct {
 	execPath    string
@@ -53,7 +26,7 @@ type Downloader struct {
 	supported   map[domain.Platform]bool
 }
 
-func New(execPath, cookiesFile string, _ int64) *Downloader {
+func New(execPath, cookiesFile string) *Downloader {
 	return &Downloader{
 		execPath:    execPath,
 		cookiesFile: cookiesFile,
@@ -102,7 +75,7 @@ func qualityFormat(quality string) string {
 
 // AnalyzeFormats runs yt-dlp --dump-json and returns a compact format summary
 // without downloading the video.
-func (d *Downloader) AnalyzeFormats(ctx context.Context, url string) (*FormatSummary, error) {
+func (d *Downloader) AnalyzeFormats(ctx context.Context, url string) (*domain.FormatSummary, error) {
 	url = normalizeURL(url)
 
 	args := []string{"--dump-json", "--no-playlist", "--no-warnings", "--js-runtimes", "node"}
@@ -196,7 +169,6 @@ type ytdlpFormat struct {
 	TBR            *float64 `json:"tbr"`
 }
 
-// formatSize returns the best available size estimate for a format.
 func (f *ytdlpFormat) formatSize(duration float64) int64 {
 	if f.FileSize != nil && *f.FileSize > 0 {
 		return *f.FileSize
@@ -204,20 +176,18 @@ func (f *ytdlpFormat) formatSize(duration float64) int64 {
 	if f.FileSizeApprox != nil && *f.FileSizeApprox > 0 {
 		return *f.FileSizeApprox
 	}
-	// Estimate from bitrate × duration
 	if f.TBR != nil && *f.TBR > 0 && duration > 0 {
 		return int64(*f.TBR * 1000 / 8 * duration)
 	}
 	return 0
 }
 
-func buildSummary(info *ytdlpJSON) *FormatSummary {
-	s := &FormatSummary{
+func buildSummary(info *ytdlpJSON) *domain.FormatSummary {
+	s := &domain.FormatSummary{
 		Title:    info.Title,
 		Duration: info.Duration,
 	}
 
-	// Find best audio-only stream size (for combining with video-only formats like YouTube 720p+)
 	var audioSize int64
 	for _, f := range info.Formats {
 		if strings.EqualFold(f.VCodec, "none") {
@@ -228,10 +198,9 @@ func buildSummary(info *ytdlpJSON) *FormatSummary {
 		}
 	}
 
-	heightMap := make(map[int]int64) // height → best size estimate
+	heightMap := make(map[int]int64)
 
 	for _, f := range info.Formats {
-		// Skip audio-only and formats without height
 		if f.Height == nil || *f.Height == 0 {
 			continue
 		}
@@ -242,44 +211,36 @@ func buildSummary(info *ytdlpJSON) *FormatSummary {
 		h := *f.Height
 		sz := f.formatSize(info.Duration)
 
-		// For video-only formats (YouTube 720p/1080p are split streams), add audio size
 		if strings.EqualFold(f.ACodec, "none") && audioSize > 0 {
 			sz += audioSize
 		}
 
-		// Track best size per height for Entries
 		if sz > heightMap[h] {
 			heightMap[h] = sz
 		}
 
-		// Min: smallest height ≥ 240p
 		if h >= 240 && (s.MinHeight == 0 || h < s.MinHeight || (h == s.MinHeight && sz < s.MinSize)) {
 			s.MinHeight = h
 			s.MinSize = sz
 		}
-
-		// 720p: best (highest) height ≤ 720
 		if h <= 720 && (s.P720Height == 0 || h > s.P720Height || (h == s.P720Height && sz > s.P720Size)) {
 			s.P720Height = h
 			s.P720Size = sz
 		}
-
-		// Max: highest resolution (size secondary)
 		if s.MaxHeight == 0 || h > s.MaxHeight || (h == s.MaxHeight && sz > s.MaxSize) {
 			s.MaxHeight = h
 			s.MaxSize = sz
 		}
 	}
 
-	// Build sorted Entries
 	heights := make([]int, 0, len(heightMap))
 	for h := range heightMap {
 		heights = append(heights, h)
 	}
 	sort.Ints(heights)
-	s.Entries = make([]FormatEntry, len(heights))
+	s.Entries = make([]domain.FormatEntry, len(heights))
 	for i, h := range heights {
-		s.Entries[i] = FormatEntry{Height: h, Size: heightMap[h]}
+		s.Entries[i] = domain.FormatEntry{Height: h, Size: heightMap[h]}
 	}
 
 	return s

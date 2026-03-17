@@ -39,8 +39,20 @@ func NewVideoService(
 	}
 }
 
-// ProcessURL detects the platform, downloads the video, and checks its size.
-// Returns the video and a cleanup function that must be called after use.
+// DetectPlatform exposes platform detection for callers that need to choose
+// a download strategy before calling ProcessURL (e.g. quality selection).
+func (s *VideoService) DetectPlatform(url string) domain.Platform {
+	return s.detector.Detect(url)
+}
+
+// MaxFileSize returns the configured file-size limit (bytes).
+// The service no longer enforces it — the handler decides (Telegram, local API, Drive).
+func (s *VideoService) MaxFileSize() int64 {
+	return s.maxSize
+}
+
+// ProcessURL detects the platform, downloads the video, and returns it.
+// Size enforcement is the caller's responsibility (handler can offer Drive upload).
 func (s *VideoService) ProcessURL(ctx context.Context, url string) (*domain.Video, func(), error) {
 	platform := s.detector.Detect(url)
 	if platform == domain.PlatformUnknown {

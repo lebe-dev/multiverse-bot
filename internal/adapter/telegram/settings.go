@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"encoding/json"
+	"log/slog"
 	"os"
 	"sync"
 )
@@ -26,10 +27,11 @@ type SettingsStore struct {
 	mu   sync.RWMutex
 	data map[int64]UserSettings
 	file string
+	log  *slog.Logger
 }
 
-func NewSettingsStore(file string) *SettingsStore {
-	s := &SettingsStore{data: make(map[int64]UserSettings), file: file}
+func NewSettingsStore(file string, log *slog.Logger) *SettingsStore {
+	s := &SettingsStore{data: make(map[int64]UserSettings), file: file, log: log}
 	s.load()
 	return s
 }
@@ -49,7 +51,9 @@ func (s *SettingsStore) SetQuality(userID int64, quality string) {
 	st.Quality = quality
 	s.data[userID] = st
 	s.mu.Unlock()
-	_ = s.save()
+	if err := s.save(); err != nil {
+		s.log.Error("failed to persist user settings", "error", err)
+	}
 }
 
 func (s *SettingsStore) SetCaption(userID int64, enabled bool) {
@@ -58,7 +62,9 @@ func (s *SettingsStore) SetCaption(userID int64, enabled bool) {
 	st.Caption = enabled
 	s.data[userID] = st
 	s.mu.Unlock()
-	_ = s.save()
+	if err := s.save(); err != nil {
+		s.log.Error("failed to persist user settings", "error", err)
+	}
 }
 
 func (s *SettingsStore) getOrDefault(userID int64) UserSettings {

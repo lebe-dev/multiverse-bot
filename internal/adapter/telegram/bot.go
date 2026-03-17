@@ -9,26 +9,25 @@ import (
 
 	tele "gopkg.in/telebot.v4"
 
-	ytdlpdl "gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/ytdlp"
-	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/gdrive"
+	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 	"gitlab.com/tiny-services/multiverse-bot/internal/usecase"
-
 )
-
 
 type Bot struct {
 	bot      *tele.Bot
 	localBot *tele.Bot // non-nil when LOCAL_BOT_API_URL is configured
 	service  *usecase.VideoService
-	ytdlp    *ytdlpdl.Downloader // direct access for AnalyzeFormats, DownloadBest, DownloadQuality
+	watchSvc *usecase.WatchService
 	log      *slog.Logger
 	adminIDs map[string]struct{}
+
+	qualityDl domain.QualityDownloader // for quality selection and format analysis
+	drive     domain.DriveManager      // per-user Google Drive upload
 
 	version     string
 	tgLimit     int64
 	cookiesFile string
 
-	oauth    *gdrive.OAuthManager
 	settings *SettingsStore
 	lastURL  sync.Map // map[int64]string — last URL per user
 }
@@ -68,12 +67,12 @@ func (b *Bot) SetConfig(version string, tgLimit int64, cookiesFile string) {
 	b.cookiesFile = cookiesFile
 }
 
-func (b *Bot) SetYtdlp(d *ytdlpdl.Downloader) {
-	b.ytdlp = d
+func (b *Bot) SetQualityDownloader(d domain.QualityDownloader) {
+	b.qualityDl = d
 }
 
-func (b *Bot) SetOAuth(o *gdrive.OAuthManager) {
-	b.oauth = o
+func (b *Bot) SetDrive(d domain.DriveManager) {
+	b.drive = d
 }
 
 func (b *Bot) SetSettings(s *SettingsStore) {

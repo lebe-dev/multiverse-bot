@@ -1,7 +1,12 @@
+volumes:
+  bot-data:
+  telegram-bot-api-data:
+
 services:
 
   # ── Telegram Local Bot API ──────────────────────────────────────────────────
   # Allows sending files up to 2 GB. Bot connects via LOCAL_BOT_API_URL.
+  # Requires TELEGRAM_API_ID and TELEGRAM_API_HASH in .env.
   telegram-bot-api:
     image: aiogram/telegram-bot-api:latest
     restart: unless-stopped
@@ -28,9 +33,10 @@ services:
     environment:
       COBALT_API_URL: "http://cobalt:9000"
       LOCAL_BOT_API_URL: "http://telegram-bot-api:8081"
+      SQLITE_PATH: /data/bot.db
     volumes:
+      - bot-data:/data
       - ./cookies.txt:/app/cookies.txt:ro
-      - ./gdrive-key.json:/app/gdrive-key.json:ro
     depends_on:
       - telegram-bot-api
       - cobalt
@@ -70,6 +76,3 @@ services:
         limits:
           cpus: "0.5"
           memory: 64M
-
-volumes:
-  telegram-bot-api-data:

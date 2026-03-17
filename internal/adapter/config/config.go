@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -25,14 +26,20 @@ type Config struct {
 	BrowserUserAgent string
 	ThreadsEngine    string
 	YouTubeEngine    string
-	// Per-user OAuth2 for Google Drive via Device Flow (drive.file scope).
-	// Requires a "TVs and Limited Input devices" OAuth2 client in Google Cloud Console.
+
+	// Per-user OAuth2 for Google Drive via Device Flow.
 	GoogleClientID     string
 	GoogleClientSecret string
 
-	// Storage paths (optional — defaults work for most setups)
+	// Storage paths
 	SettingsFile    string // per-user quality/caption prefs
 	DriveTokensFile string // per-user Google Drive OAuth tokens
+
+	// YouTube watcher
+	WatchPollInterval     time.Duration
+	WatchMaxSubs          int
+	WatchMaxChannelsTotal int
+	SQLitePath            string
 }
 
 func Load() (*Config, error) {
@@ -56,22 +63,26 @@ func Load() (*Config, error) {
 		BrowserUserAgent: getEnvOrDefault("BROWSER_USER_AGENT", defaultBrowserUserAgent),
 		ThreadsEngine:    getEnvOrDefault("THREADS_ENGINE", "default"),
 		YouTubeEngine:    getEnvOrDefault("YOUTUBE_ENGINE", "default"),
+
 		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
 		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+		SettingsFile:       getEnvOrDefault("SETTINGS_FILE", "./user_settings.json"),
+		DriveTokensFile:    getEnvOrDefault("DRIVE_TOKENS_FILE", "./user_drive_tokens.json"),
 
-		SettingsFile:    getEnvOrDefault("SETTINGS_FILE", "./user_settings.json"),
-		DriveTokensFile: getEnvOrDefault("DRIVE_TOKENS_FILE", "./user_drive_tokens.json"),
+		WatchPollInterval:     parseDuration(os.Getenv("WATCH_POLL_INTERVAL"), "15m"),
+		WatchMaxSubs:          parseInt(os.Getenv("WATCH_MAX_SUBSCRIPTIONS"), 20),
+		WatchMaxChannelsTotal: parseInt(os.Getenv("WATCH_MAX_CHANNELS_TOTAL"), 100),
+		SQLitePath:            getEnvOrDefault("SQLITE_PATH", "./data/bot.db"),
 	}
 
 	return cfg, nil
 }
 
 // parseMegabytes reads an env var as a megabyte integer and returns bytes.
+// Case-insensitive "MB" suffix is optional.
 func parseMegabytes(key string, defaultMB int64) int64 {
-	v := os.Getenv(key)
-	// strip optional "MB" suffix
-	v = strings.TrimSuffix(strings.TrimSpace(v), "MB")
-	v = strings.TrimSuffix(v, "mb")
+	v := strings.ToUpper(strings.TrimSpace(os.Getenv(key)))
+	v = strings.TrimSuffix(v, "MB")
 	if n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil && n > 0 {
 		return n * 1024 * 1024
 	}
@@ -110,6 +121,25 @@ func parseAllowedUsers(s string) []string {
 func getEnvOrDefault(key, defaultVal string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return defaultVal
+}
+
+func parseDuration(s, defaultVal string) time.Duration {
+	if s != "" {
+		if d, err := time.ParseDuration(s); err == nil {
+			return d
+		}
+	}
+	d, _ := time.ParseDuration(defaultVal)
+	return d
+}
+
+func parseInt(s string, defaultVal int) int {
+	if s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			return n
+		}
 	}
 	return defaultVal
 }

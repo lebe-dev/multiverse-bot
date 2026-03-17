@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
+
+	"golang.org/x/sync/errgroup"
 
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/config"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/detector"
@@ -17,12 +20,14 @@ import (
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/threads"
 	ytdlpdl "gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/ytdlp"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/gdrive"
+	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/store/sqlite"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/telegram"
+	youtubewatcher "gitlab.com/tiny-services/multiverse-bot/internal/adapter/watcher/youtube"
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 	"gitlab.com/tiny-services/multiverse-bot/internal/usecase"
 )
 
-const Version = "0.5.0"
+const Version = "0.6.0"
 
 func main() {
 	cfg, err := config.Load()
@@ -41,7 +46,6 @@ func main() {
 	)
 
 	// ── Startup cleanup ───────────────────────────────────────────────────────
-	// Remove stray temp dirs left by crashed/killed previous runs.
 	if stray, err := filepath.Glob("/tmp/multiverse-ytdlp-*"); err == nil {
 		for _, dir := range stray {
 			if rmErr := os.RemoveAll(dir); rmErr == nil {
@@ -52,7 +56,7 @@ func main() {
 
 	// ── Downloaders ───────────────────────────────────────────────────────────
 	det := detector.New()
-	ytdlpDownloader := ytdlpdl.New(cfg.YtdlpPath, cfg.CookiesFile, 0)
+	ytdlpDownloader := ytdlpdl.New(cfg.YtdlpPath, cfg.CookiesFile)
 	cobaltDownloader := cobalt.New(cfg.CobaltAPIURL)
 
 	var threadsDownloader domain.Downloader
@@ -68,7 +72,7 @@ func main() {
 	var youtubeDownloader domain.Downloader
 	switch cfg.YouTubeEngine {
 	case "savevids":
-		youtubeDownloader = savevids.New(0)
+		youtubeDownloader = savevids.New(cfg.TGLimit)
 		log.Info("youtube engine: savevids")
 	default:
 		log.Info("youtube engine: yt-dlp")
@@ -81,7 +85,7 @@ func main() {
 	backends = append(backends, ytdlpDownloader, cobaltDownloader)
 	comp := composite.New(log, backends...)
 
-	svc := usecase.NewVideoService(det, comp, log, 0)
+	svc := usecase.NewVideoService(det, comp, log, cfg.TGLimit)
 
 	// ── Bot ───────────────────────────────────────────────────────────────────
 	bot, err := telegram.New(cfg.TelegramToken, svc, log)
@@ -90,10 +94,28 @@ func main() {
 		os.Exit(1)
 	}
 
+	// ── Watcher ───────────────────────────────────────────────────────────────
+	store, err := sqlite.New(cfg.SQLitePath)
+	if err != nil {
+		log.Error("failed to open sqlite", "error", err)
+		os.Exit(1)
+	}
+	defer func() { _ = store.Close() }()
+
+	feedFetcher := youtubewatcher.NewFeedFetcher()
+	channelResolver := youtubewatcher.NewResolver(cfg.BrowserUserAgent)
+	notifier := bot.NewNotifier(log)
+
+	watchSvc := usecase.NewWatchService(
+		store, feedFetcher, channelResolver, notifier, log,
+		cfg.WatchPollInterval, cfg.WatchMaxSubs, cfg.WatchMaxChannelsTotal,
+	)
+
+	// ── Bot configuration ─────────────────────────────────────────────────────
 	bot.SetConfig(Version, cfg.TGLimit, cfg.CookiesFile)
-	bot.SetYtdlp(ytdlpDownloader)
+	bot.SetQualityDownloader(ytdlpDownloader)
 	bot.SetAdminUsers(cfg.AdminUsers)
-	bot.SetSettings(telegram.NewSettingsStore(cfg.SettingsFile))
+	bot.SetSettings(telegram.NewSettingsStore(cfg.SettingsFile, log))
 
 	if cfg.LocalBotAPIURL != "" {
 		if err := bot.SetLocalBotAPI(cfg.LocalBotAPIURL); err != nil {
@@ -103,19 +125,23 @@ func main() {
 		}
 	}
 
-	// ── Per-user OAuth2 for Google Drive (Device Flow — no HTTP server needed) ─
+	// ── Per-user OAuth2 for Google Drive (Device Flow) ────────────────────────
 	if cfg.GoogleClientID != "" && cfg.GoogleClientSecret != "" {
-		tokenStore := gdrive.NewTokenStore(cfg.DriveTokensFile)
-		oauthMgr := gdrive.NewOAuthManager(cfg.GoogleClientID, cfg.GoogleClientSecret, tokenStore)
-		bot.SetOAuth(oauthMgr)
+		tokenStore := gdrive.NewTokenStore(cfg.DriveTokensFile, log)
+		driveMgr := gdrive.NewManager(cfg.GoogleClientID, cfg.GoogleClientSecret, tokenStore, log)
+		bot.SetDrive(driveMgr)
 		log.Info("google drive OAuth enabled (device flow)")
 	}
 
 	bot.RegisterHandlers(cfg.AllowedUsers)
+	bot.RegisterWatchHandlers(watchSvc)
 
 	// ── Run ───────────────────────────────────────────────────────────────────
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	g, gCtx := errgroup.WithContext(ctx)
+	g.Go(func() error { return watchSvc.Run(gCtx) })
 
 	go func() {
 		log.Info("bot started")
@@ -126,4 +152,8 @@ func main() {
 	<-ctx.Done()
 	log.Info("shutting down")
 	bot.Stop()
+
+	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
+		log.Error("watcher stopped with error", "error", err)
+	}
 }

@@ -15,14 +15,12 @@ import (
 
 	tele "gopkg.in/telebot.v4"
 
-	ytdlpdl "gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/ytdlp"
-	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/gdrive"
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 )
 
 const (
-	downloadTimeout    = 30 * time.Minute
-	uploadTimeout      = 30 * time.Minute
+	downloadTimeout    = 10 * time.Minute
+	saveTimeout        = 30 * time.Minute
 	analyzeTimeout     = 45 * time.Second
 	localBotAPIMaxSize = 2000 * 1024 * 1024 // 2 GB
 	minDiskSpaceBytes  = 1024 * 1024 * 1024 // 1 GB
@@ -41,6 +39,7 @@ func (b *Bot) RegisterHandlers(allowedUsers []string) {
 		msg := "Multiverse Bot\n\n" +
 			"Платформы: YouTube, Instagram, X (Twitter), Threads\n\n" +
 			"Команды:\n" +
+			"/watch <url> — подписаться на YouTube-канал\n" +
 			"/settings — настройки (качество, подпись)\n" +
 			"/details <url> — доступные форматы и размеры\n" +
 			"/save [url] — сохранить в Google Drive\n" +
@@ -95,38 +94,46 @@ func (b *Bot) handleText(c tele.Context) error {
 
 	var (
 		filePath string
-		sizeMB   int64
+		fileSize int64 // raw bytes — no precision loss
 		title    string
 		cleanup  func()
 	)
 
-	ytVideo, err := b.ytdlp.DownloadQuality(dlCtx, url, quality)
-	if err != nil {
-		b.log.Warn("ytdlp failed, trying composite", "error", err)
+	// Fix #4: only use quality downloader for YouTube, not for all URLs.
+	platform := b.service.DetectPlatform(url)
+	if platform == domain.PlatformYouTube && b.qualityDl != nil {
+		ytVideo, err := b.qualityDl.DownloadQuality(dlCtx, url, quality)
+		if err == nil {
+			filePath = ytVideo.FilePath
+			fileSize = ytVideo.Size
+			title = ytVideo.Title
+			dir := filepath.Dir(filePath)
+			cleanup = func() { _ = os.RemoveAll(dir) }
+		} else {
+			b.log.Warn("quality download failed, falling back to composite", "error", err)
+		}
+	}
+
+	// Fallback: composite downloader for non-YouTube or if quality download failed.
+	if cleanup == nil {
 		video, svcCleanup, svcErr := b.service.ProcessURL(dlCtx, url)
 		if svcErr != nil {
 			b.deleteMsg(statusMsg)
 			return b.handleError(c, svcErr)
 		}
 		filePath = video.FilePath
-		sizeMB = video.Size / (1024 * 1024)
+		fileSize = video.Size
 		title = video.Title
 		cleanup = svcCleanup
-	} else {
-		filePath = ytVideo.FilePath
-		sizeMB = ytVideo.Size / (1024 * 1024)
-		title = ytVideo.Title
-		dir := filepath.Dir(filePath)
-		cleanup = func() { _ = os.RemoveAll(dir) }
 	}
 
+	sizeMB := fileSize / (1024 * 1024)
 	downloadedAt := time.Now()
 	dlDur := downloadedAt.Sub(startedAt)
 	b.log.Info("downloaded",
 		"size_mb", sizeMB,
 		"quality", quality,
 		"download_s", int(dlDur.Seconds()),
-		"speed_mbs", fmt.Sprintf("%.1f", float64(sizeMB)/dlDur.Seconds()),
 		"url", url,
 	)
 
@@ -141,9 +148,8 @@ func (b *Bot) handleText(c tele.Context) error {
 		caption = ""
 	}
 
-	fileSize := sizeMB * 1024 * 1024
+	// Fix #2: use raw byte size for limit comparison — no integer truncation.
 	var sendErr error
-
 	if fileSize <= b.tgLimit {
 		defer cleanup()
 		sendErr = b.sendVideo(b.bot, c, filePath, caption)
@@ -207,7 +213,6 @@ func settingsText(st UserSettings) string {
 func settingsKeyboard(st UserSettings) *tele.ReplyMarkup {
 	kb := &tele.ReplyMarkup{}
 
-	// Quality row
 	qualityBtns := make([]tele.Btn, len(ValidQualities))
 	for i, q := range ValidQualities {
 		label := q
@@ -217,7 +222,6 @@ func settingsKeyboard(st UserSettings) *tele.ReplyMarkup {
 		qualityBtns[i] = kb.Data(label, "set_quality", q)
 	}
 
-	// Caption row
 	captionOn := kb.Data("Вкл", "set_caption", "on")
 	captionOff := kb.Data("Выкл", "set_caption", "off")
 	if st.Caption {
@@ -233,23 +237,32 @@ func settingsKeyboard(st UserSettings) *tele.ReplyMarkup {
 	return kb
 }
 
-// ── Callback handler ──────────────────────────────────────────────────────────
+// ── Unified callback handler (settings + watch) ──────────────────────────────
 
 func (b *Bot) handleCallback(c tele.Context) error {
-	// telebot.v4 formats button data as "\f{unique}|{payload}"
-	data := strings.TrimPrefix(c.Data(), "\f")
-	parts := strings.SplitN(data, "|", 2)
-	if len(parts) != 2 {
-		return c.Respond()
-	}
-	action, key := parts[0], parts[1]
+	data := c.Data()
 
-	switch action {
-	case "set_quality":
-		return b.callbackSetQuality(c, key)
-	case "set_caption":
-		return b.callbackSetCaption(c, key)
+	// Watch callbacks (from watch_handler.go) use raw prefixes.
+	switch {
+	case strings.HasPrefix(data, "dl:"):
+		return b.handleDownloadCallback(c, strings.TrimPrefix(data, "dl:"))
+	case strings.HasPrefix(data, "watch_rm:"):
+		return b.handleUnsubscribeCallback(c, strings.TrimPrefix(data, "watch_rm:"))
 	}
+
+	// Settings callbacks use telebot.v4 "\f{unique}|{payload}" format.
+	data = strings.TrimPrefix(data, "\f")
+	parts := strings.SplitN(data, "|", 2)
+	if len(parts) == 2 {
+		action, key := parts[0], parts[1]
+		switch action {
+		case "set_quality":
+			return b.callbackSetQuality(c, key)
+		case "set_caption":
+			return b.callbackSetCaption(c, key)
+		}
+	}
+
 	return c.Respond()
 }
 
@@ -296,6 +309,10 @@ func (b *Bot) callbackSetCaption(c tele.Context, value string) error {
 // ── /details and /save commands ───────────────────────────────────────────────
 
 func (b *Bot) handleDetailsCommand(c tele.Context) error {
+	if b.qualityDl == nil {
+		return c.Send("⚙️ Анализ форматов недоступен.")
+	}
+
 	url := extractURL(strings.Join(c.Args(), " "))
 	if url == "" {
 		return c.Send("Использование: /details <url>")
@@ -306,7 +323,7 @@ func (b *Bot) handleDetailsCommand(c tele.Context) error {
 	ctx, cancel := context.WithTimeout(context.Background(), analyzeTimeout)
 	defer cancel()
 
-	summary, err := b.ytdlp.AnalyzeFormats(ctx, url)
+	summary, err := b.qualityDl.AnalyzeFormats(ctx, url)
 	b.deleteMsg(statusMsg)
 	if err != nil {
 		b.log.Error("analyze failed", "url", url, "error", err)
@@ -318,16 +335,18 @@ func (b *Bot) handleDetailsCommand(c tele.Context) error {
 }
 
 func (b *Bot) handleSaveCommand(c tele.Context) error {
-	if b.oauth == nil {
+	if b.drive == nil {
 		return c.Send("⚙️ Google Drive не настроен.")
+	}
+	if b.qualityDl == nil {
+		return c.Send("⚙️ Загрузчик недоступен.")
 	}
 
 	userID := c.Sender().ID
-	if !b.oauth.IsConnected(userID) {
+	if !b.drive.IsConnected(userID) {
 		return c.Send("⚙️ Google Drive не подключён.\n\nИспользуйте /auth чтобы подключить свой Google Drive.")
 	}
 
-	// Use provided URL or fall back to last sent URL for this user
 	url := extractURL(strings.Join(c.Args(), " "))
 	if url == "" {
 		if val, ok := b.lastURL.Load(userID); ok {
@@ -345,10 +364,10 @@ func (b *Bot) handleSaveCommand(c tele.Context) error {
 
 	statusMsg, _ := b.bot.Send(c.Recipient(), "⏳ Скачиваю оригинальное качество...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), uploadTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), saveTimeout)
 	defer cancel()
 
-	best, err := b.ytdlp.DownloadBest(ctx, url)
+	best, err := b.qualityDl.DownloadBest(ctx, url)
 	if err != nil {
 		b.deleteMsg(statusMsg)
 		b.log.Error("best download failed", "url", url, "error", err)
@@ -359,13 +378,7 @@ func (b *Bot) handleSaveCommand(c tele.Context) error {
 	bestMB := best.Size / (1024 * 1024)
 	b.editMsg(statusMsg, fmt.Sprintf("☁️ Загружаю %d МБ в Google Drive...", bestMB))
 
-	svc, svcErr := b.oauth.DriveService(ctx, userID)
-	if svcErr != nil {
-		b.deleteMsg(statusMsg)
-		return c.Send("⚠️ Сессия Google Drive устарела. Используйте /auth для повторной авторизации.")
-	}
-
-	link, err := gdrive.UploadUserFile(ctx, svc, best.Title, best.FilePath)
+	link, err := b.drive.Upload(ctx, userID, best.Title, best.FilePath)
 	b.deleteMsg(statusMsg)
 	if err != nil {
 		b.log.Error("gdrive upload failed", "error", err)
@@ -379,14 +392,14 @@ func (b *Bot) handleSaveCommand(c tele.Context) error {
 // ── /auth and /disconnect commands ────────────────────────────────────────────
 
 func (b *Bot) handleAuthCommand(c tele.Context) error {
-	if b.oauth == nil {
+	if b.drive == nil {
 		return c.Send("⚙️ OAuth не настроен. Обратитесь к администратору.")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	resp, err := b.oauth.StartDeviceAuth(ctx)
+	info, pollFn, err := b.drive.StartAuth(ctx)
 	if err != nil {
 		b.log.Error("device auth start failed", "error", err)
 		return c.Send("❌ Не удалось запустить авторизацию. Попробуйте позже.")
@@ -399,19 +412,19 @@ func (b *Bot) handleAuthCommand(c tele.Context) error {
 			"Жду подтверждения... (код действует %d мин)\n\n"+
 			"⚠️ Бот получит доступ <b>только к файлам, которые сам загрузит</b> — "+
 			"ваши существующие файлы недоступны.",
-		resp.VerificationURI,
-		resp.UserCode,
-		int(time.Until(resp.Expiry).Minutes()),
+		info.VerificationURI,
+		info.UserCode,
+		int(time.Until(info.Expiry).Minutes()),
 	), &tele.SendOptions{ParseMode: tele.ModeHTML})
 
 	userID := c.Sender().ID
 	recipient := c.Recipient()
 
 	go func() {
-		pollCtx, pollCancel := context.WithDeadline(context.Background(), resp.Expiry)
+		pollCtx, pollCancel := context.WithDeadline(context.Background(), info.Expiry)
 		defer pollCancel()
 
-		if err := b.oauth.PollDeviceAuth(pollCtx, userID, resp); err != nil {
+		if err := pollFn(pollCtx, userID); err != nil {
 			_, _ = b.bot.Send(recipient, "⏱ Время вышло или доступ отклонён. Используйте /auth снова.")
 			return
 		}
@@ -422,19 +435,19 @@ func (b *Bot) handleAuthCommand(c tele.Context) error {
 }
 
 func (b *Bot) handleDisconnectCommand(c tele.Context) error {
-	if b.oauth == nil {
+	if b.drive == nil {
 		return c.Send("⚙️ OAuth не настроен.")
 	}
-	if !b.oauth.IsConnected(c.Sender().ID) {
+	if !b.drive.IsConnected(c.Sender().ID) {
 		return c.Send("Google Drive не подключён.")
 	}
-	b.oauth.Disconnect(c.Sender().ID)
+	b.drive.Disconnect(c.Sender().ID)
 	return c.Send("✅ Google Drive отключён. Токен удалён.")
 }
 
 // ── Format messages ───────────────────────────────────────────────────────────
 
-func formatDetailsMsg(s *ytdlpdl.FormatSummary) string {
+func formatDetailsMsg(s *domain.FormatSummary) string {
 	var sb strings.Builder
 	sb.WriteString("📋 <b>Доступные форматы</b>\n")
 	if s.Title != "" {
@@ -516,7 +529,6 @@ func (b *Bot) handleError(c tele.Context, err error) error {
 
 // ── Admin commands ────────────────────────────────────────────────────────────
 
-
 func (b *Bot) handleConfigCommand(c tele.Context) error {
 	if !b.IsAdmin(c.Sender().Username) {
 		return c.Send("❌ Нет доступа.")
@@ -530,7 +542,7 @@ func (b *Bot) handleConfigCommand(c tele.Context) error {
 	} else {
 		sb.WriteString("Local Bot API: <code>отключён</code>\n")
 	}
-	if b.oauth != nil {
+	if b.drive != nil {
 		sb.WriteString("Google Drive OAuth: <code>включён ✅</code>\n")
 	} else {
 		sb.WriteString("Google Drive OAuth: <code>отключён</code>\n")

@@ -2,6 +2,7 @@ package gdrive
 
 import (
 	"encoding/json"
+	"log/slog"
 	"os"
 	"sync"
 
@@ -13,10 +14,11 @@ type TokenStore struct {
 	mu   sync.RWMutex
 	data map[int64]*oauth2.Token
 	file string
+	log  *slog.Logger
 }
 
-func NewTokenStore(file string) *TokenStore {
-	s := &TokenStore{data: make(map[int64]*oauth2.Token), file: file}
+func NewTokenStore(file string, log *slog.Logger) *TokenStore {
+	s := &TokenStore{data: make(map[int64]*oauth2.Token), file: file, log: log}
 	s.load()
 	return s
 }
@@ -31,14 +33,18 @@ func (s *TokenStore) Save(userID int64, token *oauth2.Token) {
 	s.mu.Lock()
 	s.data[userID] = token
 	s.mu.Unlock()
-	_ = s.persist()
+	if err := s.persist(); err != nil {
+		s.log.Error("failed to persist drive tokens", "error", err)
+	}
 }
 
 func (s *TokenStore) Delete(userID int64) {
 	s.mu.Lock()
 	delete(s.data, userID)
 	s.mu.Unlock()
-	_ = s.persist()
+	if err := s.persist(); err != nil {
+		s.log.Error("failed to persist drive tokens after delete", "error", err)
+	}
 }
 
 func (s *TokenStore) load() {

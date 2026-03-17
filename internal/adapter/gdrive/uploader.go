@@ -9,11 +9,10 @@ import (
 	"google.golang.org/api/drive/v3"
 )
 
-// UploadUserFile uploads filePath into the user's "Multiverse Bot" folder on their Drive.
+// uploadUserFile uploads filePath into the user's "Multiverse Bot" folder on their Drive.
 // The folder is created automatically on first use and reused on subsequent uploads.
-// The file is owned by the user (drive.file scope — bot cannot see their other files).
 // Returns a view link.
-func UploadUserFile(ctx context.Context, svc *drive.Service, title, filePath string) (string, error) {
+func uploadUserFile(ctx context.Context, svc *drive.Service, title, filePath string) (string, error) {
 	folderID, err := getOrCreateFolder(ctx, svc, "Multiverse Bot")
 	if err != nil {
 		return "", fmt.Errorf("preparing folder: %w", err)
@@ -23,7 +22,7 @@ func UploadUserFile(ctx context.Context, svc *drive.Service, title, filePath str
 	if err != nil {
 		return "", fmt.Errorf("opening file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Use video title as filename if available, keep original extension.
 	name := filepath.Base(filePath)
