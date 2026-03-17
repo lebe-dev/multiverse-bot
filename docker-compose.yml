@@ -1,3 +1,6 @@
+volumes:
+  bot-data:
+
 services:
   bot:
     image: tinyops/multiverse-bot:0.4.0
@@ -7,13 +10,16 @@ services:
       - .env
     environment:
       COBALT_API_URL: "http://cobalt:9000"
+      SQLITE_PATH: /data/bot.db
+    volumes:
+      - bot-data:/data
     depends_on:
       - cobalt
     deploy:
       resources:
         limits:
           cpus: "1"
-          memory: 128M
+          memory: 256M
 
   cobalt:
     image: ghcr.io/imputnet/cobalt:11

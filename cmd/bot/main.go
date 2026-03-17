@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"golang.org/x/sync/errgroup"
 
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/config"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/detector"
@@ -15,12 +18,14 @@ import (
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/savevids"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/threads"
 	ytdlpdl "gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/ytdlp"
-	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
+	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/store/sqlite"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/telegram"
+	youtubewatcher "gitlab.com/tiny-services/multiverse-bot/internal/adapter/watcher/youtube"
+	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 	"gitlab.com/tiny-services/multiverse-bot/internal/usecase"
 )
 
-const Version = "0.4.0"
+const Version = "0.5.0"
 
 func main() {
 	cfg, err := config.Load()
@@ -65,7 +70,6 @@ func main() {
 	backends = append(backends, ytdlpDownloader, cobaltDownloader)
 
 	comp := composite.New(log, backends...)
-
 	svc := usecase.NewVideoService(det, comp, log, cfg.MaxFileSize)
 
 	bot, err := telegram.New(cfg.TelegramToken, svc, log)
@@ -74,12 +78,32 @@ func main() {
 		os.Exit(1)
 	}
 
+	store, err := sqlite.New(cfg.SQLitePath)
+	if err != nil {
+		log.Error("failed to open sqlite", "error", err)
+		os.Exit(1)
+	}
+	defer func() { _ = store.Close() }()
+
+	feedFetcher := youtubewatcher.NewFeedFetcher()
+	channelResolver := youtubewatcher.NewResolver(cfg.BrowserUserAgent)
+	notifier := bot.NewNotifier(log)
+
+	watchSvc := usecase.NewWatchService(
+		store, feedFetcher, channelResolver, notifier, log,
+		cfg.WatchPollInterval, cfg.WatchMaxSubs, cfg.WatchMaxChannelsTotal,
+	)
+
 	bot.SetAdminUsers(cfg.AdminUsers)
 	bot.SetConfig(Version, cfg.MaxFileSize, cfg.CookiesFile)
 	bot.RegisterHandlers(cfg.AllowedUsers)
+	bot.RegisterWatchHandlers(watchSvc)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	g, gCtx := errgroup.WithContext(ctx)
+	g.Go(func() error { return watchSvc.Run(gCtx) })
 
 	go func() {
 		log.Info("bot started")
@@ -90,4 +114,8 @@ func main() {
 	<-ctx.Done()
 	log.Info("shutting down")
 	bot.Stop()
+
+	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
+		log.Error("watcher stopped with error", "error", err)
+	}
 }

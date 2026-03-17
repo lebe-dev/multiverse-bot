@@ -13,6 +13,7 @@ import (
 type Bot struct {
 	bot         *tele.Bot
 	service     *usecase.VideoService
+	watchSvc    *usecase.WatchService
 	log         *slog.Logger
 	adminIDs    map[string]struct{}
 	version     string
