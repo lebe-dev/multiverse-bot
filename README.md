@@ -34,5 +34,4 @@ docker compose up -d
 - [Файлы >50 МБ (Local Bot API)](docs/local-bot-api.md) — снятие ограничения Telegram
 - [Google Drive](docs/google-drive.md) — сохранение видео в личный Drive
 - [Плагины](PLUGINS.md) — расширение бота через внешние HTTP-сервисы
-- [Архитектура](ARCH.md) — устройство кода
 - [Разработка](DEV.md) — сборка, тесты, линтер
