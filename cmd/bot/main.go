@@ -105,7 +105,7 @@ func main() {
 	defer func() { _ = store.Close() }()
 
 	feedFetcher := youtubewatcher.NewFeedFetcher()
-	channelResolver := youtubewatcher.NewResolver(cfg.BrowserUserAgent)
+	channelResolver := youtubewatcher.NewResolver(cfg.YtdlpPath, cfg.CookiesFile)
 	notifier := bot.NewNotifier(log)
 
 	watchSvc := usecase.NewWatchService(

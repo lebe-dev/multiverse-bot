@@ -3,11 +3,10 @@ package youtube
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
+	"os"
+	"os/exec"
 	"regexp"
 	"strings"
-	"time"
 
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 )
@@ -17,88 +16,69 @@ var (
 	channelURLRe = regexp.MustCompile(`youtube\.com/channel/(UC[a-zA-Z0-9_-]{22})`)
 	handleURLRe  = regexp.MustCompile(`youtube\.com/@([a-zA-Z0-9_.\-]+)`)
 	customURLRe  = regexp.MustCompile(`youtube\.com/c/([a-zA-Z0-9_.\-]+)`)
-	channelIDRe  = regexp.MustCompile(`"channelId":"(UC[a-zA-Z0-9_-]{22})"`)
 )
 
 type Resolver struct {
-	client    *http.Client
-	userAgent string
-	fetcher   *FeedFetcher
+	ytdlpPath   string
+	cookiesFile string
+	fetcher     *FeedFetcher
 }
 
-func NewResolver(userAgent string) *Resolver {
+func NewResolver(ytdlpPath, cookiesFile string) *Resolver {
 	return &Resolver{
-		client:    &http.Client{Timeout: 10 * time.Second},
-		userAgent: userAgent,
-		fetcher:   NewFeedFetcher(),
+		ytdlpPath:   ytdlpPath,
+		cookiesFile: cookiesFile,
+		fetcher:     NewFeedFetcher(),
 	}
 }
 
 func (r *Resolver) Resolve(ctx context.Context, input string) (string, string, error) {
 	input = strings.TrimSpace(input)
 
+	// Direct UC channel ID — validate via RSS feed (no yt-dlp needed).
 	if ucIDRe.MatchString(input) {
 		return r.validateAndName(ctx, input)
 	}
 
+	// Channel URL with UC ID embedded — extract and validate.
 	if m := channelURLRe.FindStringSubmatch(input); len(m) > 1 {
 		return r.validateAndName(ctx, m[1])
 	}
 
-	var handle string
+	// Handle (@name), handle URL, custom URL — resolve via yt-dlp.
+	var ytdlpURL string
 	if m := handleURLRe.FindStringSubmatch(input); len(m) > 1 {
-		handle = m[1]
+		ytdlpURL = "https://www.youtube.com/@" + m[1]
 	} else if h, ok := strings.CutPrefix(input, "@"); ok {
-		handle = h
+		ytdlpURL = "https://www.youtube.com/@" + h
+	} else if m := customURLRe.FindStringSubmatch(input); len(m) > 1 {
+		ytdlpURL = "https://www.youtube.com/c/" + m[1]
 	}
 
-	if handle != "" {
-		return r.resolveHandle(ctx, handle)
-	}
-
-	if m := customURLRe.FindStringSubmatch(input); len(m) > 1 {
-		return r.resolveHandle(ctx, m[1])
+	if ytdlpURL != "" {
+		return r.resolveViaYtdlp(ctx, ytdlpURL)
 	}
 
 	return "", "", domain.ErrChannelNotFound
 }
 
-func (r *Resolver) resolveHandle(ctx context.Context, handle string) (string, string, error) {
-	pageURL := "https://www.youtube.com/@" + handle
-	channelID, err := r.extractChannelIDFromPage(ctx, pageURL)
+func (r *Resolver) resolveViaYtdlp(ctx context.Context, url string) (string, string, error) {
+	args := []string{"--print", "channel_id", "--print", "channel", "--playlist-items", "0", "--no-warnings"}
+	if _, err := os.Stat(r.cookiesFile); err == nil {
+		args = append(args, "--cookies", r.cookiesFile)
+	}
+	args = append(args, url)
+
+	out, err := exec.CommandContext(ctx, r.ytdlpPath, args...).Output()
 	if err != nil {
-		return "", "", fmt.Errorf("%w: @%s not resolved (tip: use UC... channel ID directly as a reliable fallback)", domain.ErrChannelNotFound, handle)
-	}
-	return r.validateAndName(ctx, channelID)
-}
-
-func (r *Resolver) extractChannelIDFromPage(ctx context.Context, pageURL string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("User-Agent", r.userAgent)
-
-	resp, err := r.client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("status %d", resp.StatusCode)
+		return "", "", fmt.Errorf("%w: yt-dlp resolve failed", domain.ErrChannelNotFound)
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) < 2 || !strings.HasPrefix(lines[0], "UC") {
+		return "", "", fmt.Errorf("%w: channel ID not found", domain.ErrChannelNotFound)
 	}
-
-	m := channelIDRe.FindSubmatch(body)
-	if len(m) < 2 {
-		return "", fmt.Errorf("channel ID not found in page")
-	}
-	return string(m[1]), nil
+	return lines[0], lines[1], nil
 }
 
 func (r *Resolver) validateAndName(ctx context.Context, channelID string) (string, string, error) {
