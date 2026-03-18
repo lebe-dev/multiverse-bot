@@ -36,6 +36,8 @@ func (b *Bot) RegisterHandlers(allowedUsers []string) {
 		b.bot.Use(whitelistMiddleware(allowed, b.log))
 	}
 
+	b.bot.Use(requestLogMiddleware(b.log))
+
 	// Track admin chat IDs so we can send startup notifications.
 	if len(b.adminIDs) > 0 && b.adminChats != nil {
 		b.bot.Use(b.adminTrackMiddleware())
@@ -117,8 +119,6 @@ func (b *Bot) handleText(c tele.Context) error {
 	}
 	quality := st.Quality
 
-	b.log.Debug("incoming message", "url", url, "sender", c.Sender().Username, "quality", quality)
-
 	startedAt := time.Now()
 	statusMsg, _ := b.bot.Send(c.Recipient(), fmt.Sprintf("⏳ Скачиваю %s...", quality))
 
@@ -134,6 +134,13 @@ func (b *Bot) handleText(c tele.Context) error {
 
 	// Fix #4: only use quality downloader for YouTube, not for all URLs.
 	platform := b.service.DetectPlatform(url)
+	b.log.Info("processing url",
+		"user", c.Sender().Username,
+		"user_id", c.Sender().ID,
+		"url", url,
+		"platform", platform.String(),
+		"quality", quality,
+	)
 	if platform == domain.PlatformYouTube && b.qualityDl != nil {
 		ytVideo, err := b.qualityDl.DownloadQuality(dlCtx, url, quality)
 		if err == nil {
@@ -171,10 +178,12 @@ func (b *Bot) handleText(c tele.Context) error {
 	downloadedAt := time.Now()
 	dlDur := downloadedAt.Sub(startedAt)
 	b.log.Info("downloaded",
+		"user", c.Sender().Username,
+		"user_id", c.Sender().ID,
+		"url", url,
 		"size_mb", sizeMB,
 		"quality", quality,
 		"download_s", int(dlDur.Seconds()),
-		"url", url,
 	)
 
 	b.deleteMsg(statusMsg)
@@ -198,6 +207,12 @@ func (b *Bot) handleText(c tele.Context) error {
 		cleanup()
 	} else {
 		cleanup()
+		b.log.Warn("video too large for telegram",
+			"user", c.Sender().Username,
+			"user_id", c.Sender().ID,
+			"url", url,
+			"size_mb", sizeMB,
+		)
 		return c.Send(fmt.Sprintf(
 			"❌ Видео %d МБ — слишком большое.\n\nИспользуйте /save %s для загрузки в Google Drive.",
 			sizeMB, url,
@@ -206,9 +221,20 @@ func (b *Bot) handleText(c tele.Context) error {
 
 	if sendErr == nil {
 		b.log.Info("sent",
+			"user", c.Sender().Username,
+			"user_id", c.Sender().ID,
+			"url", url,
 			"size_mb", sizeMB,
 			"send_s", int(time.Since(downloadedAt).Seconds()),
 			"total_s", int(time.Since(startedAt).Seconds()),
+		)
+	} else {
+		b.log.Error("send failed",
+			"user", c.Sender().Username,
+			"user_id", c.Sender().ID,
+			"url", url,
+			"size_mb", sizeMB,
+			"error", sendErr,
 		)
 	}
 	return sendErr
@@ -334,6 +360,12 @@ func (b *Bot) callbackSetQuality(c tele.Context, quality string) error {
 			if b.settings != nil {
 				b.settings.SetQuality(c.Sender().ID, quality)
 			}
+			b.log.Info("setting changed",
+				"user", c.Sender().Username,
+				"user_id", c.Sender().ID,
+				"key", "quality",
+				"value", quality,
+			)
 			st := defaultSettings()
 			if b.settings != nil {
 				st = b.settings.Get(c.Sender().ID)
@@ -353,6 +385,12 @@ func (b *Bot) callbackSetCaption(c tele.Context, value string) error {
 	if b.settings != nil {
 		b.settings.SetCaption(c.Sender().ID, enabled)
 	}
+	b.log.Info("setting changed",
+		"user", c.Sender().Username,
+		"user_id", c.Sender().ID,
+		"key", "caption",
+		"value", enabled,
+	)
 	st := defaultSettings()
 	if b.settings != nil {
 		st = b.settings.Get(c.Sender().ID)
@@ -450,6 +488,12 @@ func (b *Bot) handleSaveCommand(c tele.Context) error {
 			&tele.SendOptions{ParseMode: tele.ModeHTML})
 	}
 
+	b.log.Info("saved to drive",
+		"user", c.Sender().Username,
+		"user_id", c.Sender().ID,
+		"url", url,
+		"size_mb", bestMB,
+	)
 	return c.Send(fmt.Sprintf("✅ Сохранено в Google Drive\n\nРазмер: %d МБ\n\n%s", bestMB, link))
 }
 
@@ -513,11 +557,13 @@ func (b *Bot) callbackDriveConnect(c tele.Context) error {
 		defer pollCancel()
 
 		if err := pollFn(pollCtx, userID); err != nil {
+			b.log.Warn("drive auth failed", "user_id", userID, "error", err)
 			kb := &tele.ReplyMarkup{}
 			kb.Inline(kb.Row(kb.Data("🔄 Попробовать снова", "drive_connect")))
 			_, _ = b.bot.Edit(msg, "⏱ Время вышло или доступ отклонён.", kb)
 			return
 		}
+		b.log.Info("drive connected", "user_id", userID)
 		_, _ = b.bot.Edit(msg, "✅ Google Drive подключён!\n\nТеперь /save будет сохранять видео в ваш личный Drive.", driveDisconnectKeyboard())
 	}()
 
@@ -529,6 +575,7 @@ func (b *Bot) callbackDriveDisconnect(c tele.Context) error {
 		return c.Respond(&tele.CallbackResponse{Text: "OAuth не настроен"})
 	}
 	b.drive.Disconnect(c.Sender().ID)
+	b.log.Info("drive disconnected", "user", c.Sender().Username, "user_id", c.Sender().ID)
 	_ = c.Respond(&tele.CallbackResponse{Text: "Google Drive отключён"})
 	return c.Edit("Google Drive не подключён.", driveConnectKeyboard())
 }
@@ -593,20 +640,24 @@ func freeDiskBytes(path string) (uint64, error) {
 
 func (b *Bot) handleError(c tele.Context, err error) error {
 	showDebug := b.debug && b.IsAdmin(c.Sender().Username)
+	user := c.Sender().Username
+	userID := c.Sender().ID
 	switch {
 	case errors.Is(err, domain.ErrUnsupportedPlatform):
+		b.log.Warn("unsupported platform", "user", user, "user_id", userID)
 		return c.Send("Платформа не поддерживается. Поддерживаются: YouTube, Instagram, X (Twitter), Threads.")
 	case errors.Is(err, domain.ErrVideoTooLarge):
+		b.log.Warn("video too large", "user", user, "user_id", userID)
 		return c.Send("Видео слишком большое.")
 	case errors.Is(err, domain.ErrDownloadFailed):
-		b.log.Error("download failed", "error", err)
+		b.log.Error("download failed", "user", user, "user_id", userID, "error", err)
 		msg := "Ошибка загрузки. Видео может быть закрыто, приватным или ссылка повреждена."
 		if showDebug {
 			msg += fmt.Sprintf("\n\n<code>%v</code>", escapeHTML(err.Error()))
 		}
 		return c.Send(msg, &tele.SendOptions{ParseMode: tele.ModeHTML})
 	default:
-		b.log.Error("unexpected error", "error", err)
+		b.log.Error("unexpected error", "user", user, "user_id", userID, "error", err)
 		msg := "Что-то пошло не так. Попробуйте ещё раз."
 		if showDebug {
 			msg += fmt.Sprintf("\n\n<code>%v</code>", escapeHTML(err.Error()))

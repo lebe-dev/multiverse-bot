@@ -63,9 +63,15 @@ func (b *Bot) executePlugin(c tele.Context, client domain.PluginClient, pluginNa
 	ctx, cancel := context.WithTimeout(context.Background(), pluginExecuteTimeout)
 	defer cancel()
 
+	b.log.Info("plugin executing",
+		"user", c.Sender().Username,
+		"user_id", c.Sender().ID,
+		"plugin", pluginName,
+	)
+
 	resp, err := client.Execute(ctx, req)
 	if err != nil {
-		b.log.Error("plugin execute failed", "plugin", pluginName, "error", err)
+		b.log.Error("plugin execute failed", "plugin", pluginName, "user", c.Sender().Username, "error", err)
 		return c.Send("⚠️ Ошибка плагина. Попробуйте позже.")
 	}
 

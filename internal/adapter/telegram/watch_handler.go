@@ -72,8 +72,19 @@ func (b *Bot) handleWatchSubscribe(c tele.Context, channelInput string) error {
 	}
 
 	if err != nil {
+		b.log.Warn("subscribe failed",
+			"user", c.Sender().Username,
+			"user_id", c.Sender().ID,
+			"channel", channelInput,
+			"error", err,
+		)
 		return c.Send(watchSubscribeError(err))
 	}
+	b.log.Info("subscribed",
+		"user", c.Sender().Username,
+		"user_id", c.Sender().ID,
+		"channel", channelInput,
+	)
 	return c.Send("✅ Подписка оформлена! Вы будете получать уведомления о новых видео.")
 }
 
@@ -93,6 +104,11 @@ func watchSubscribeError(err error) string {
 }
 
 func (b *Bot) handleDownloadCallback(c tele.Context, videoID string) error {
+	b.log.Info("watch download requested",
+		"user", c.Sender().Username,
+		"user_id", c.Sender().ID,
+		"video", videoID,
+	)
 	_ = c.Respond(&tele.CallbackResponse{Text: "⏳ Загружаю видео..."})
 
 	go func() {
@@ -123,9 +139,20 @@ func (b *Bot) handleUnsubscribeCallback(c tele.Context, channelID string) error 
 	defer cancel()
 
 	if err := b.watchSvc.Unsubscribe(ctx, c.Sender().ID, channelID); err != nil {
+		b.log.Warn("unsubscribe failed",
+			"user", c.Sender().Username,
+			"user_id", c.Sender().ID,
+			"channel", channelID,
+			"error", err,
+		)
 		_ = c.Respond(&tele.CallbackResponse{Text: "Ошибка при отписке"})
 		return nil
 	}
+	b.log.Info("unsubscribed",
+		"user", c.Sender().Username,
+		"user_id", c.Sender().ID,
+		"channel", channelID,
+	)
 	_ = c.Respond(&tele.CallbackResponse{Text: "Отписка выполнена ✅"})
 
 	subs, err := b.watchSvc.ListSubscriptions(ctx, c.Sender().ID)

@@ -80,7 +80,7 @@ func Load() (*Config, error) {
 		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
 		SettingsFile:       getEnvOrDefault("SETTINGS_FILE", "./user_settings.json"),
 		DriveTokensFile:    getEnvOrDefault("DRIVE_TOKENS_FILE", "./user_drive_tokens.json"),
-		AdminChatsFile:     getEnvOrDefault("ADMIN_CHATS_FILE", "./admin_chats.json"),
+		AdminChatsFile:     getEnvOrDefault("ADMIN_CHATS_FILE", "./data/admin_chats.json"),
 
 		PluginsConfig: os.Getenv("PLUGINS_CONFIG"),
 
