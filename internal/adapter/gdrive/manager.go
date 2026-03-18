@@ -78,7 +78,7 @@ func (m *Manager) Disconnect(userID int64) {
 func (m *Manager) Upload(ctx context.Context, userID int64, title, filePath string) (string, error) {
 	token := m.store.Get(userID)
 	if token == nil {
-		return "", fmt.Errorf("not connected — use /auth")
+		return "", fmt.Errorf("not connected — use /drive")
 	}
 
 	src := &persistingTokenSource{

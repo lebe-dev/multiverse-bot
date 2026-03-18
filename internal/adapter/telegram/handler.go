@@ -37,14 +37,17 @@ func (b *Bot) RegisterHandlers(allowedUsers []string) {
 	}
 
 	b.bot.Handle("/start", b.handleStartCommand)
-
 	b.bot.Handle("/settings", b.handleSettingsCommand)
-	b.bot.Handle("/config", b.handleConfigCommand)
-	b.bot.Handle("/cookies", b.handleCookiesStatus)
 	b.bot.Handle("/details", b.handleDetailsCommand)
 	b.bot.Handle("/save", b.handleSaveCommand)
-	b.bot.Handle("/auth", b.handleAuthCommand)
-	b.bot.Handle("/disconnect", b.handleDisconnectCommand)
+	b.bot.Handle("/drive", b.handleDriveCommand)
+	b.bot.Handle("/admin", b.handleAdminCommand)
+
+	// Legacy redirects (one release cycle).
+	b.bot.Handle("/auth", func(c tele.Context) error { return c.Send("Команда перенесена → /drive") })
+	b.bot.Handle("/disconnect", func(c tele.Context) error { return c.Send("Команда перенесена → /drive") })
+	b.bot.Handle("/config", func(c tele.Context) error { return c.Send("Команда перенесена → /admin") })
+	b.bot.Handle("/cookies", func(c tele.Context) error { return c.Send("Команда перенесена → /admin") })
 
 	// Register plugin commands.
 	if b.plugins != nil {
@@ -68,12 +71,11 @@ func (b *Bot) handleStartCommand(c tele.Context) error {
 	msg := "Multiverse Bot\n\n" +
 		"Платформы: YouTube, Instagram, X (Twitter), Threads\n\n" +
 		"Команды:\n" +
-		"/watch <url> — подписаться на YouTube-канал\n" +
 		"/settings — настройки (качество, подпись)\n" +
+		"/watch <url> — подписаться на YouTube-канал\n" +
 		"/details <url> — доступные форматы и размеры\n" +
 		"/save [url] — сохранить в Google Drive\n" +
-		"/auth — подключить Google Drive\n" +
-		"/disconnect — отключить Google Drive\n"
+		"/drive — управление Google Drive\n"
 
 	// Show plugin commands in help.
 	if b.plugins != nil {
@@ -86,8 +88,7 @@ func (b *Bot) handleStartCommand(c tele.Context) error {
 
 	if b.IsAdmin(c.Sender().Username) {
 		msg += "\nАдмин:\n" +
-			"/config — статус бота и место на диске\n" +
-			"/cookies — статус cookies.txt (отправь файл для обновления)"
+			"/admin — панель администратора"
 	}
 	return c.Send(msg)
 }
@@ -281,8 +282,15 @@ func settingsKeyboard(st UserSettings) *tele.ReplyMarkup {
 func (b *Bot) handleCallback(c tele.Context) error {
 	data := c.Data()
 
-	// Watch callbacks (from watch_handler.go) use raw prefixes.
+	// Drive / admin callbacks use exact match.
 	switch {
+	case data == "drive_connect":
+		return b.callbackDriveConnect(c)
+	case data == "drive_disconnect":
+		return b.callbackDriveDisconnect(c)
+	case data == "admin_refresh":
+		return b.callbackAdminRefresh(c)
+	// Watch callbacks (from watch_handler.go) use raw prefixes.
 	case strings.HasPrefix(data, "dl:"):
 		return b.handleDownloadCallback(c, strings.TrimPrefix(data, "dl:"))
 	case strings.HasPrefix(data, "watch_rm:"):
@@ -393,7 +401,9 @@ func (b *Bot) handleSaveCommand(c tele.Context) error {
 
 	userID := c.Sender().ID
 	if !b.drive.IsConnected(userID) {
-		return c.Send("⚙️ Google Drive не подключён.\n\nИспользуйте /auth чтобы подключить свой Google Drive.")
+		kb := &tele.ReplyMarkup{}
+		kb.Inline(kb.Row(kb.Data("🔗 Подключить Google Drive", "drive_connect")))
+		return c.Send("⚙️ Google Drive не подключён.", kb)
 	}
 
 	url := extractURL(strings.Join(c.Args(), " "))
@@ -438,12 +448,36 @@ func (b *Bot) handleSaveCommand(c tele.Context) error {
 	return c.Send(fmt.Sprintf("✅ Сохранено в Google Drive\n\nРазмер: %d МБ\n\n%s", bestMB, link))
 }
 
-// ── /auth and /disconnect commands ────────────────────────────────────────────
+// ── /drive command (replaces /auth + /disconnect) ─────────────────────────────
 
-func (b *Bot) handleAuthCommand(c tele.Context) error {
+func driveConnectKeyboard() *tele.ReplyMarkup {
+	kb := &tele.ReplyMarkup{}
+	kb.Inline(kb.Row(kb.Data("🔗 Подключить Google Drive", "drive_connect")))
+	return kb
+}
+
+func driveDisconnectKeyboard() *tele.ReplyMarkup {
+	kb := &tele.ReplyMarkup{}
+	kb.Inline(kb.Row(kb.Data("🔌 Отключить", "drive_disconnect")))
+	return kb
+}
+
+func (b *Bot) handleDriveCommand(c tele.Context) error {
 	if b.drive == nil {
-		return c.Send("⚙️ OAuth не настроен. Обратитесь к администратору.")
+		return c.Send("⚙️ Google Drive не настроен.")
 	}
+	if b.drive.IsConnected(c.Sender().ID) {
+		return c.Send("✅ Google Drive подключён.", driveDisconnectKeyboard())
+	}
+	return c.Send("Google Drive не подключён.", driveConnectKeyboard())
+}
+
+func (b *Bot) callbackDriveConnect(c tele.Context) error {
+	if b.drive == nil {
+		return c.Respond(&tele.CallbackResponse{Text: "OAuth не настроен"})
+	}
+
+	_ = c.Respond()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -451,10 +485,10 @@ func (b *Bot) handleAuthCommand(c tele.Context) error {
 	info, pollFn, err := b.drive.StartAuth(ctx)
 	if err != nil {
 		b.log.Error("device auth start failed", "error", err)
-		return c.Send("❌ Не удалось запустить авторизацию. Попробуйте позже.")
+		return c.Edit("❌ Не удалось запустить авторизацию. Попробуйте позже.", driveConnectKeyboard())
 	}
 
-	_ = c.Send(fmt.Sprintf(
+	_ = c.Edit(fmt.Sprintf(
 		"🔐 <b>Подключение Google Drive</b>\n\n"+
 			"<b>1.</b> Откройте: <code>%s</code>\n"+
 			"<b>2.</b> Введите код: <code>%s</code>\n\n"+
@@ -467,31 +501,31 @@ func (b *Bot) handleAuthCommand(c tele.Context) error {
 	), &tele.SendOptions{ParseMode: tele.ModeHTML})
 
 	userID := c.Sender().ID
-	recipient := c.Recipient()
+	msg := c.Message()
 
 	go func() {
 		pollCtx, pollCancel := context.WithDeadline(context.Background(), info.Expiry)
 		defer pollCancel()
 
 		if err := pollFn(pollCtx, userID); err != nil {
-			_, _ = b.bot.Send(recipient, "⏱ Время вышло или доступ отклонён. Используйте /auth снова.")
+			kb := &tele.ReplyMarkup{}
+			kb.Inline(kb.Row(kb.Data("🔄 Попробовать снова", "drive_connect")))
+			_, _ = b.bot.Edit(msg, "⏱ Время вышло или доступ отклонён.", kb)
 			return
 		}
-		_, _ = b.bot.Send(recipient, "✅ Google Drive подключён!\n\nТеперь /save будет сохранять видео в ваш личный Drive.")
+		_, _ = b.bot.Edit(msg, "✅ Google Drive подключён!\n\nТеперь /save будет сохранять видео в ваш личный Drive.", driveDisconnectKeyboard())
 	}()
 
 	return nil
 }
 
-func (b *Bot) handleDisconnectCommand(c tele.Context) error {
+func (b *Bot) callbackDriveDisconnect(c tele.Context) error {
 	if b.drive == nil {
-		return c.Send("⚙️ OAuth не настроен.")
-	}
-	if !b.drive.IsConnected(c.Sender().ID) {
-		return c.Send("Google Drive не подключён.")
+		return c.Respond(&tele.CallbackResponse{Text: "OAuth не настроен"})
 	}
 	b.drive.Disconnect(c.Sender().ID)
-	return c.Send("✅ Google Drive отключён. Токен удалён.")
+	_ = c.Respond(&tele.CallbackResponse{Text: "Google Drive отключён"})
+	return c.Edit("Google Drive не подключён.", driveConnectKeyboard())
 }
 
 // ── Format messages ───────────────────────────────────────────────────────────
@@ -576,14 +610,11 @@ func (b *Bot) handleError(c tele.Context, err error) error {
 	}
 }
 
-// ── Admin commands ────────────────────────────────────────────────────────────
+// ── /admin command (replaces /config + /cookies) ──────────────────────────────
 
-func (b *Bot) handleConfigCommand(c tele.Context) error {
-	if !b.IsAdmin(c.Sender().Username) {
-		return c.Send("❌ Нет доступа.")
-	}
+func (b *Bot) adminPanelMsg() string {
 	var sb strings.Builder
-	sb.WriteString("⚙️ <b>Конфигурация бота</b>\n\n")
+	sb.WriteString("⚙️ <b>Панель администратора</b>\n\n")
 	fmt.Fprintf(&sb, "Версия: <code>%s</code>\n", b.version)
 	fmt.Fprintf(&sb, "Лимит TG: <code>%d МБ</code>\n", b.tgLimit/(1024*1024))
 	if b.localBot != nil {
@@ -599,22 +630,42 @@ func (b *Bot) handleConfigCommand(c tele.Context) error {
 	if free, err := freeDiskBytes("."); err == nil {
 		fmt.Fprintf(&sb, "Диск свободно: <code>%d МБ</code>\n", free/(1024*1024))
 	}
-	return c.Send(sb.String(), &tele.SendOptions{ParseMode: tele.ModeHTML})
+
+	// Cookies status.
+	if info, err := os.Stat(b.cookiesFile); err == nil {
+		fmt.Fprintf(&sb, "\nCookies: ✅ (<code>%d</code> байт)\n", info.Size())
+	} else {
+		sb.WriteString("\nCookies: ❌\n")
+	}
+	sb.WriteString("\nОтправьте <code>cookies.txt</code> для обновления.")
+	return sb.String()
 }
 
-func (b *Bot) handleCookiesStatus(c tele.Context) error {
+func adminRefreshKeyboard() *tele.ReplyMarkup {
+	kb := &tele.ReplyMarkup{}
+	kb.Inline(kb.Row(kb.Data("🔄 Обновить", "admin_refresh")))
+	return kb
+}
+
+func (b *Bot) handleAdminCommand(c tele.Context) error {
 	if !b.IsAdmin(c.Sender().Username) {
 		return c.Send("❌ Нет доступа.")
 	}
-	info, err := os.Stat(b.cookiesFile)
-	if err == nil {
-		return c.Send(fmt.Sprintf(
-			"Cookies: ✅\nПуть: <code>%s</code>\nРазмер: %d байт\n\nОтправьте новый cookies.txt для обновления.",
-			b.cookiesFile, info.Size(),
-		), &tele.SendOptions{ParseMode: tele.ModeHTML})
+	return c.Send(b.adminPanelMsg(), &tele.SendOptions{
+		ParseMode:   tele.ModeHTML,
+		ReplyMarkup: adminRefreshKeyboard(),
+	})
+}
+
+func (b *Bot) callbackAdminRefresh(c tele.Context) error {
+	if !b.IsAdmin(c.Sender().Username) {
+		return c.Respond(&tele.CallbackResponse{Text: "Нет доступа"})
 	}
-	return c.Send("Cookies: ❌\n\nОтправьте <code>cookies.txt</code> (Netscape формат) для авторизации YouTube.",
-		&tele.SendOptions{ParseMode: tele.ModeHTML})
+	_ = c.Respond(&tele.CallbackResponse{Text: "Обновлено"})
+	return c.Edit(b.adminPanelMsg(), &tele.SendOptions{
+		ParseMode:   tele.ModeHTML,
+		ReplyMarkup: adminRefreshKeyboard(),
+	})
 }
 
 const maxCookiesFileSize = 1 * 1024 * 1024

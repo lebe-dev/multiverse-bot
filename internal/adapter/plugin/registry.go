@@ -13,15 +13,18 @@ import (
 
 // builtinCommands cannot be overridden by plugins.
 var builtinCommands = map[string]bool{
-	"/start":      true,
-	"/settings":   true,
-	"/config":     true,
-	"/cookies":    true,
-	"/details":    true,
-	"/save":       true,
+	"/start":    true,
+	"/settings": true,
+	"/details":  true,
+	"/save":     true,
+	"/watch":    true,
+	"/drive":    true,
+	"/admin":    true,
+	// Legacy redirects — reserved so plugins don't claim them.
 	"/auth":       true,
 	"/disconnect": true,
-	"/watch":      true,
+	"/config":     true,
+	"/cookies":    true,
 }
 
 // pluginEntry holds a loaded plugin's client, manifest, and compiled URL patterns.
