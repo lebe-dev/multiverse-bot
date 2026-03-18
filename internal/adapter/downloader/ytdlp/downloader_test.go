@@ -1,6 +1,7 @@
 package ytdlp
 
 import (
+	"log/slog"
 	"testing"
 )
 
@@ -37,7 +38,7 @@ func TestNormalizeURL(t *testing.T) {
 }
 
 func TestNew(t *testing.T) {
-	d := New("/usr/bin/yt-dlp", "/tmp/cookies.txt")
+	d := New("/usr/bin/yt-dlp", "/tmp/cookies.txt", slog.Default())
 
 	if d.execPath != "/usr/bin/yt-dlp" {
 		t.Errorf("expected execPath /usr/bin/yt-dlp, got %s", d.execPath)

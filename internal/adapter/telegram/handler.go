@@ -36,6 +36,11 @@ func (b *Bot) RegisterHandlers(allowedUsers []string) {
 		b.bot.Use(whitelistMiddleware(allowed, b.log))
 	}
 
+	// Track admin chat IDs so we can send startup notifications.
+	if len(b.adminIDs) > 0 && b.adminChats != nil {
+		b.bot.Use(b.adminTrackMiddleware())
+	}
+
 	b.bot.Handle("/start", b.handleStartCommand)
 	b.bot.Handle("/settings", b.handleSettingsCommand)
 	b.bot.Handle("/details", b.handleDetailsCommand)
@@ -587,7 +592,7 @@ func freeDiskBytes(path string) (uint64, error) {
 // ── Error handling ────────────────────────────────────────────────────────────
 
 func (b *Bot) handleError(c tele.Context, err error) error {
-	isAdmin := b.IsAdmin(c.Sender().Username)
+	showDebug := b.debug && b.IsAdmin(c.Sender().Username)
 	switch {
 	case errors.Is(err, domain.ErrUnsupportedPlatform):
 		return c.Send("Платформа не поддерживается. Поддерживаются: YouTube, Instagram, X (Twitter), Threads.")
@@ -596,15 +601,15 @@ func (b *Bot) handleError(c tele.Context, err error) error {
 	case errors.Is(err, domain.ErrDownloadFailed):
 		b.log.Error("download failed", "error", err)
 		msg := "Ошибка загрузки. Видео может быть закрыто, приватным или ссылка повреждена."
-		if isAdmin {
-			msg += fmt.Sprintf("\n\n<code>%v</code>", err)
+		if showDebug {
+			msg += fmt.Sprintf("\n\n<code>%v</code>", escapeHTML(err.Error()))
 		}
 		return c.Send(msg, &tele.SendOptions{ParseMode: tele.ModeHTML})
 	default:
 		b.log.Error("unexpected error", "error", err)
 		msg := "Что-то пошло не так. Попробуйте ещё раз."
-		if isAdmin {
-			msg += fmt.Sprintf("\n\n<code>%v</code>", err)
+		if showDebug {
+			msg += fmt.Sprintf("\n\n<code>%v</code>", escapeHTML(err.Error()))
 		}
 		return c.Send(msg, &tele.SendOptions{ParseMode: tele.ModeHTML})
 	}
@@ -616,6 +621,9 @@ func (b *Bot) adminPanelMsg() string {
 	var sb strings.Builder
 	sb.WriteString("⚙️ <b>Панель администратора</b>\n\n")
 	fmt.Fprintf(&sb, "Версия: <code>%s</code>\n", b.version)
+	if b.debug {
+		sb.WriteString("Debug: <code>включён ✅</code>\n")
+	}
 	fmt.Fprintf(&sb, "Лимит TG: <code>%d МБ</code>\n", b.tgLimit/(1024*1024))
 	if b.localBot != nil {
 		sb.WriteString("Local Bot API: <code>включён ✅</code>\n")

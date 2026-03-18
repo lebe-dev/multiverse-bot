@@ -44,6 +44,7 @@ func main() {
 	log.Info("starting multiverse-bot",
 		"version", Version,
 		"tg_limit_mb", cfg.TGLimit/(1024*1024),
+		"debug", cfg.Debug,
 	)
 
 	// ── Startup cleanup ───────────────────────────────────────────────────────
@@ -57,23 +58,23 @@ func main() {
 
 	// ── Downloaders ───────────────────────────────────────────────────────────
 	det := detector.New()
-	ytdlpDownloader := ytdlpdl.New(cfg.YtdlpPath, cfg.CookiesFile)
-	cobaltDownloader := cobalt.New(cfg.CobaltAPIURL)
+	ytdlpDownloader := ytdlpdl.New(cfg.YtdlpPath, cfg.CookiesFile, log)
+	cobaltDownloader := cobalt.New(cfg.CobaltAPIURL, log)
 
 	var threadsDownloader domain.Downloader
 	switch cfg.ThreadsEngine {
 	case "lovethreads":
-		threadsDownloader = lovethreads.New()
+		threadsDownloader = lovethreads.New(log)
 		log.Info("threads engine: lovethreads")
 	default:
-		threadsDownloader = threads.New(cfg.BrowserUserAgent)
+		threadsDownloader = threads.New(cfg.BrowserUserAgent, log)
 		log.Info("threads engine: default (direct)")
 	}
 
 	var youtubeDownloader domain.Downloader
 	switch cfg.YouTubeEngine {
 	case "savevids":
-		youtubeDownloader = savevids.New(cfg.TGLimit)
+		youtubeDownloader = savevids.New(cfg.TGLimit, log)
 		log.Info("youtube engine: savevids")
 	default:
 		log.Info("youtube engine: yt-dlp")
@@ -113,9 +114,10 @@ func main() {
 	)
 
 	// ── Bot configuration ─────────────────────────────────────────────────────
-	bot.SetConfig(Version, cfg.TGLimit, cfg.CookiesFile)
+	bot.SetConfig(Version, cfg.TGLimit, cfg.CookiesFile, cfg.Debug)
 	bot.SetQualityDownloader(ytdlpDownloader)
 	bot.SetAdminUsers(cfg.AdminUsers)
+	bot.SetAdminChatStore(telegram.NewAdminChatStore(cfg.AdminChatsFile, log))
 	bot.SetSettings(telegram.NewSettingsStore(cfg.SettingsFile, log))
 
 	if cfg.LocalBotAPIURL != "" {

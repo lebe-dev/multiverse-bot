@@ -19,7 +19,8 @@ type Bot struct {
 	service  *usecase.VideoService
 	watchSvc *usecase.WatchService
 	log      *slog.Logger
-	adminIDs map[string]struct{}
+	adminIDs    map[string]struct{}
+	adminChats  *AdminChatStore
 
 	qualityDl domain.QualityDownloader // for quality selection and format analysis
 	drive     domain.DriveManager      // per-user Google Drive upload
@@ -28,6 +29,7 @@ type Bot struct {
 	version     string
 	tgLimit     int64
 	cookiesFile string
+	debug       bool
 
 	settings *SettingsStore
 	lastURL  sync.Map // map[int64]string — last URL per user
@@ -62,10 +64,11 @@ func (b *Bot) SetLocalBotAPI(url string) error {
 	return nil
 }
 
-func (b *Bot) SetConfig(version string, tgLimit int64, cookiesFile string) {
+func (b *Bot) SetConfig(version string, tgLimit int64, cookiesFile string, debug bool) {
 	b.version = version
 	b.tgLimit = tgLimit
 	b.cookiesFile = cookiesFile
+	b.debug = debug
 }
 
 func (b *Bot) SetQualityDownloader(d domain.QualityDownloader) {
@@ -90,14 +93,22 @@ func (b *Bot) SetAdminUsers(admins []string) {
 	}
 }
 
+func (b *Bot) SetAdminChatStore(s *AdminChatStore) {
+	b.adminChats = s
+}
+
 func (b *Bot) NotifyAdminsStarted(version string) {
-	if len(b.adminIDs) == 0 {
+	if len(b.adminIDs) == 0 || b.adminChats == nil {
 		return
 	}
 	msg := fmt.Sprintf("🚀 Запустилась версия %s", version)
 	for admin := range b.adminIDs {
-		recipient := &tele.Chat{Username: admin}
-		if _, err := b.bot.Send(recipient, msg); err != nil {
+		chatID := b.adminChats.ChatID(admin)
+		if chatID == 0 {
+			b.log.Warn("admin chat ID unknown, skipping notification (admin needs to /start the bot first)", "admin", admin)
+			continue
+		}
+		if _, err := b.bot.Send(&tele.Chat{ID: chatID}, msg); err != nil {
 			b.log.Error("failed to notify admin", "admin", admin, "error", err)
 		}
 	}

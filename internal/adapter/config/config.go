@@ -11,6 +11,11 @@ import (
 	"github.com/joho/godotenv"
 )
 
+func parseBool(s string) bool {
+	b, _ := strconv.ParseBool(s)
+	return b
+}
+
 const defaultBrowserUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 type Config struct {
@@ -34,9 +39,13 @@ type Config struct {
 	// Storage paths
 	SettingsFile    string // per-user quality/caption prefs
 	DriveTokensFile string // per-user Google Drive OAuth tokens
+	AdminChatsFile  string // admin username → chat ID mapping
 
 	// Plugins
 	PluginsConfig string // path to plugins.yml
+
+	// Debug mode — verbose error details sent to admin chats.
+	Debug bool
 
 	// YouTube watcher
 	WatchPollInterval     time.Duration
@@ -71,8 +80,11 @@ func Load() (*Config, error) {
 		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
 		SettingsFile:       getEnvOrDefault("SETTINGS_FILE", "./user_settings.json"),
 		DriveTokensFile:    getEnvOrDefault("DRIVE_TOKENS_FILE", "./user_drive_tokens.json"),
+		AdminChatsFile:     getEnvOrDefault("ADMIN_CHATS_FILE", "./admin_chats.json"),
 
 		PluginsConfig: os.Getenv("PLUGINS_CONFIG"),
+
+		Debug: parseBool(os.Getenv("DEBUG")),
 
 		WatchPollInterval:     parseDuration(os.Getenv("WATCH_POLL_INTERVAL"), "15m"),
 		WatchMaxSubs:          parseInt(os.Getenv("WATCH_MAX_SUBSCRIPTIONS"), 20),

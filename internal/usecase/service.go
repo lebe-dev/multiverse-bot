@@ -55,6 +55,7 @@ func (s *VideoService) MaxFileSize() int64 {
 // Size enforcement is the caller's responsibility (handler can offer Drive upload).
 func (s *VideoService) ProcessURL(ctx context.Context, url string) (*domain.Video, func(), error) {
 	platform := s.detector.Detect(url)
+	s.log.Debug("platform detected", "url", url, "platform", platform.String())
 	if platform == domain.PlatformUnknown {
 		return nil, nil, domain.ErrUnsupportedPlatform
 	}

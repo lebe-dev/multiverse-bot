@@ -3,6 +3,7 @@ package threads
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -13,10 +14,11 @@ import (
 // It extracts the video URL from Threads SSR data and downloads the file.
 type Downloader struct {
 	client *client
+	log    *slog.Logger
 }
 
-func New(userAgent string) *Downloader {
-	return &Downloader{client: newClient(userAgent)}
+func New(userAgent string, log *slog.Logger) *Downloader {
+	return &Downloader{client: newClient(userAgent), log: log}
 }
 
 func (d *Downloader) Supports(p domain.Platform) bool {
@@ -24,6 +26,7 @@ func (d *Downloader) Supports(p domain.Platform) bool {
 }
 
 func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, error) {
+	d.log.Debug("extracting threads video", "url", url)
 	videos, err := d.client.extract(ctx, url)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
@@ -31,6 +34,7 @@ func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, e
 	if len(videos) == 0 {
 		return nil, fmt.Errorf("%w: no video found", domain.ErrDownloadFailed)
 	}
+	d.log.Debug("threads extracted videos", "count", len(videos))
 
 	tmpDir, err := os.MkdirTemp("", "multiverse-threads-*")
 	if err != nil {
@@ -44,6 +48,7 @@ func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, e
 		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
 	}
 
+	d.log.Debug("downloading threads video")
 	if err := d.client.downloadVideo(ctx, videos[0].URL, f); err != nil {
 		_ = f.Close()
 		_ = os.RemoveAll(tmpDir)

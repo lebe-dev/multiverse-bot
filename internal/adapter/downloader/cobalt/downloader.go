@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,15 +19,17 @@ type Downloader struct {
 	apiURL     string
 	httpClient *http.Client
 	supported  map[domain.Platform]bool
+	log        *slog.Logger
 }
 
-func New(apiURL string) *Downloader {
+func New(apiURL string, log *slog.Logger) *Downloader {
 	if apiURL == "" {
 		apiURL = "https://api.cobalt.tools"
 	}
 	return &Downloader{
 		apiURL:     apiURL,
 		httpClient: &http.Client{Timeout: 60 * time.Second},
+		log:        log,
 		supported: map[domain.Platform]bool{
 			domain.PlatformInstagram: true,
 			domain.PlatformTwitter:   true,
@@ -51,6 +54,7 @@ type cobaltResponse struct {
 }
 
 func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, error) {
+	d.log.Debug("calling cobalt API", "url", url, "api", d.apiURL)
 	body, err := json.Marshal(cobaltRequest{URL: url})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
@@ -74,6 +78,8 @@ func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, e
 		return nil, fmt.Errorf("%w: invalid response: %v", domain.ErrDownloadFailed, err)
 	}
 
+	d.log.Debug("cobalt API response", "status", cr.Status)
+
 	if cr.Status == "error" {
 		code := "unknown"
 		if cr.Error != nil {
@@ -86,6 +92,7 @@ func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, e
 		return nil, fmt.Errorf("%w: cobalt returned no URL (status: %s)", domain.ErrDownloadFailed, cr.Status)
 	}
 
+	d.log.Debug("downloading cobalt file")
 	tmpDir, err := os.MkdirTemp("", "multiverse-cobalt-*")
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)

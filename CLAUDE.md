@@ -31,6 +31,7 @@ just docker-logs  # tail bot logs
 | `YTDLP_PATH` | no | `yt-dlp` | Path to yt-dlp executable |
 | `YTDLP_COOKIES_FILE` | no | `./cookies.txt` | Path to cookies file for yt-dlp |
 | `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn`, `error` |
+| `DEBUG` | no | `false` | Show verbose error details to admin chats |
 | `THREADS_ENGINE` | no | `default` | Threads engine: `default` (direct scraping with uTLS) or `lovethreads` (lovethreads.net proxy) |
 | `YOUTUBE_ENGINE` | no | `default` | YouTube engine: `default` (yt-dlp) or `savevids` (vidssave.com API) |
 | `BROWSER_USER_AGENT` | no | Chrome 131 UA | Browser User-Agent for Threads requests (only used with `default` engine) |

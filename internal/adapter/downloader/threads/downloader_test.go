@@ -1,13 +1,14 @@
 package threads
 
 import (
+	"log/slog"
 	"testing"
 
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 )
 
 func TestDownloader_Supports(t *testing.T) {
-	d := New("test-agent")
+	d := New("test-agent", slog.Default())
 
 	if !d.Supports(domain.PlatformThreads) {
 		t.Error("should support PlatformThreads")

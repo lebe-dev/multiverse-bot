@@ -3,6 +3,7 @@ package savevids
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -14,12 +15,14 @@ import (
 type Downloader struct {
 	client  *client
 	maxSize int64
+	log     *slog.Logger
 }
 
-func New(maxSize int64) *Downloader {
+func New(maxSize int64, log *slog.Logger) *Downloader {
 	return &Downloader{
 		client:  newClient(),
 		maxSize: maxSize,
+		log:     log,
 	}
 }
 
@@ -28,10 +31,12 @@ func (d *Downloader) Supports(p domain.Platform) bool {
 }
 
 func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, error) {
+	d.log.Debug("fetching savevids URL", "url", url)
 	downloadURL, err := d.client.fetchVideoURL(ctx, url, d.maxSize)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
 	}
+	d.log.Debug("savevids got download URL")
 
 	tmpDir, err := os.MkdirTemp("", "multiverse-savevids-*")
 	if err != nil {

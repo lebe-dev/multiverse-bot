@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,12 +25,14 @@ type Downloader struct {
 	execPath    string
 	cookiesFile string
 	supported   map[domain.Platform]bool
+	log         *slog.Logger
 }
 
-func New(execPath, cookiesFile string) *Downloader {
+func New(execPath, cookiesFile string, log *slog.Logger) *Downloader {
 	return &Downloader{
 		execPath:    execPath,
 		cookiesFile: cookiesFile,
+		log:         log,
 		supported: map[domain.Platform]bool{
 			domain.PlatformYouTube:   true,
 			domain.PlatformInstagram: true,
@@ -107,6 +110,8 @@ func (d *Downloader) download(ctx context.Context, url, format string) (*domain.
 
 	outputTemplate := filepath.Join(tmpDir, "%(id)s.%(ext)s")
 
+	d.log.Debug("running yt-dlp", "url", url, "format", format)
+
 	cmd := ytdlp.New().
 		SetExecutable(d.execPath).
 		Format(format).
@@ -138,11 +143,13 @@ func (d *Downloader) download(ctx context.Context, url, format string) (*domain.
 		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
 	}
 
+	title := strings.TrimSpace(result.Stdout)
+	d.log.Debug("yt-dlp finished", "title", title, "size_bytes", fi.Size())
 	return &domain.Video{
 		URL:      url,
 		FilePath: filePath,
 		Size:     fi.Size(),
-		Title:    strings.TrimSpace(result.Stdout),
+		Title:    title,
 	}, nil
 }
 

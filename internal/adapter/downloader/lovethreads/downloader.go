@@ -3,6 +3,7 @@ package lovethreads
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -13,10 +14,11 @@ import (
 // using the lovethreads.net proxy service.
 type Downloader struct {
 	client *client
+	log    *slog.Logger
 }
 
-func New() *Downloader {
-	return &Downloader{client: newClient()}
+func New(log *slog.Logger) *Downloader {
+	return &Downloader{client: newClient(), log: log}
 }
 
 func (d *Downloader) Supports(p domain.Platform) bool {
@@ -24,6 +26,7 @@ func (d *Downloader) Supports(p domain.Platform) bool {
 }
 
 func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, error) {
+	d.log.Debug("extracting lovethreads video", "url", url)
 	urls, err := d.client.extractVideoURLs(ctx, url)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
@@ -31,6 +34,7 @@ func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, e
 	if len(urls) == 0 {
 		return nil, fmt.Errorf("%w: no video found", domain.ErrDownloadFailed)
 	}
+	d.log.Debug("lovethreads extracted video URLs", "count", len(urls))
 
 	tmpDir, err := os.MkdirTemp("", "multiverse-lovethreads-*")
 	if err != nil {
@@ -44,6 +48,7 @@ func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, e
 		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
 	}
 
+	d.log.Debug("downloading lovethreads video")
 	if err := d.client.downloadVideo(ctx, urls[0], f); err != nil {
 		_ = f.Close()
 		_ = os.RemoveAll(tmpDir)
