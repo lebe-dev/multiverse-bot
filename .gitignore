@@ -11,6 +11,7 @@
 /.env
 /bin
 /bot
+/yt-dlp
 
 # Runtime data — user preferences and tokens, never commit
 /user_settings.json
