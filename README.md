@@ -118,6 +118,98 @@ scp cookies.txt user@your-server:/path/to/bot/cookies.txt
 YTDLP_COOKIES_FILE=/path/to/cookies.txt
 ```
 
+## Файлы больше 50 МБ — Local Telegram Bot API (опционально)
+
+По умолчанию Telegram ограничивает размер файлов до 50 МБ. Чтобы снять это ограничение и отправлять файлы до 2 ГБ, нужно поднять локальный сервер Telegram Bot API.
+
+> Без этой настройки бот предложит сохранить большие видео в Google Drive через `/save`.
+
+### Требования
+
+- Docker и Docker Compose
+- `TELEGRAM_API_ID` и `TELEGRAM_API_HASH` с сайта `my.telegram.org`
+
+### Как получить API ID и API Hash
+
+1. Зайди на `my.telegram.org` и войди под своим номером телефона
+2. Перейди в раздел **API development tools**
+3. Создай приложение (название и платформа — любые)
+4. Скопируй `App api_id` и `App api_hash`
+
+### Настройка
+
+Пропиши в `.env`:
+
+```bash
+TELEGRAM_API_ID=your_api_id
+TELEGRAM_API_HASH=your_api_hash
+```
+
+Переменная `LOCAL_BOT_API_URL` уже прописана в `docker-compose.yml` — вручную её указывать не нужно.
+
+### Запуск через Docker Compose
+
+```bash
+docker compose up -d
+```
+
+Docker Compose поднимет три сервиса:
+- `telegram-bot-api` — локальный сервер Telegram (файлы до 2 ГБ)
+- `cobalt` — бэкенд для Instagram и Twitter
+- `bot` — сам бот
+
+Логи:
+```bash
+docker compose logs -f bot
+```
+## Google Drive (опционально)
+
+Бот умеет сохранять скачанные видео на Google Drive пользователя. Каждый пользователь авторизуется отдельно через команду `/auth` — файлы сохраняются в его личный Drive.
+
+### Требования
+
+Нужно создать OAuth-приложение в Google Cloud Console.
+
+### Пошаговая настройка
+
+1. Зайди на `console.cloud.google.com`
+
+2. **Создай проект** (или выбери существующий) через меню вверху страницы
+
+3. **Включи Google Drive API:**
+   - Слева `APIs & Services` → `Enable APIs and Services`
+   - Найди `Google Drive API` → нажми `Enable`
+
+4. **Настрой OAuth consent screen:**
+   - `APIs & Services` → `OAuth consent screen`
+   - User Type: `External` → `Create`
+   - Заполни название приложения (например, `multiverse-bot`)
+   - В разделе `Scopes` → `Add or remove scopes` → найди и добавь `drive.file`
+   - В разделе `Test users` → добавь свой Google-аккаунт
+   - Сохрани
+
+5. **Создай OAuth credentials:**
+   - `APIs & Services` → `Credentials` → `Create Credentials` → `OAuth client ID`
+   - Тип: **TV and Limited Input devices** (важно именно этот — не требует redirect URI)
+   - Название: любое
+   - Нажми `Create`
+
+6. **Скопируй `Client ID` и `Client Secret`** и пропиши в `.env`:
+
+```bash
+GOOGLE_CLIENT_ID=your_client_id
+GOOGLE_CLIENT_SECRET=your_client_secret
+```
+
+7. Перезапусти бота.
+
+### Использование
+
+- `/auth` — привязать свой Google Drive (бот выдаст ссылку и код для входа)
+- После авторизации каждое скачанное видео бот дополнительно сохранит в Drive
+
+> Бот запрашивает только разрешение `drive.file` — доступ только к файлам, созданным самим ботом. Остальные файлы Drive недоступны.
+
 ## Деплой на Ubuntu-сервер
 
 ```bash
