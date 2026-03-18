@@ -46,17 +46,8 @@ func (b *Bot) handleWatchList(c tele.Context) error {
 		return c.Send("У вас нет активных подписок.\n\nОтправьте `/watch <url>` для подписки на YouTube-канал.")
 	}
 
-	var rows [][]tele.InlineButton
-	for _, sub := range subs {
-		rows = append(rows, []tele.InlineButton{
-			{Text: "❌ " + sub.ChannelName, Data: "watch_rm:" + sub.ChannelID},
-		})
-	}
-
-	return c.Send(
-		fmt.Sprintf("📺 Ваши подписки (%d):\n\nНажмите на канал для отписки.\n\nДобавить: `/watch <url>`", len(subs)),
-		&tele.ReplyMarkup{InlineKeyboard: rows},
-	)
+	text, kb := watchListMessage(subs)
+	return c.Send(text, kb)
 }
 
 func (b *Bot) handleWatchSubscribe(c tele.Context, channelInput string) error {
@@ -86,6 +77,17 @@ func (b *Bot) handleWatchSubscribe(c tele.Context, channelInput string) error {
 		"channel", channelInput,
 	)
 	return c.Send("✅ Подписка оформлена! Вы будете получать уведомления о новых видео.")
+}
+
+func watchListMessage(subs []domain.Subscription) (string, *tele.ReplyMarkup) {
+	var rows [][]tele.InlineButton
+	for _, sub := range subs {
+		rows = append(rows, []tele.InlineButton{
+			{Text: "❌ " + sub.ChannelName, Data: "watch_rm:" + sub.ChannelID},
+		})
+	}
+	text := fmt.Sprintf("📺 Ваши подписки (%d):\n\nНажмите на канал для отписки.\n\nДобавить: `/watch <url>`", len(subs))
+	return text, &tele.ReplyMarkup{InlineKeyboard: rows}
 }
 
 func watchSubscribeError(err error) string {
@@ -164,16 +166,8 @@ func (b *Bot) handleUnsubscribeCallback(c tele.Context, channelID string) error 
 		return editErr
 	}
 
-	var rows [][]tele.InlineButton
-	for _, sub := range subs {
-		rows = append(rows, []tele.InlineButton{
-			{Text: "❌ " + sub.ChannelName, Data: "watch_rm:" + sub.ChannelID},
-		})
-	}
-	_, editErr := b.bot.Edit(c.Message(),
-		fmt.Sprintf("📺 Ваши подписки (%d):\n\nНажмите на канал для отписки.\n\nДобавить: `/watch <url>`", len(subs)),
-		&tele.ReplyMarkup{InlineKeyboard: rows},
-	)
+	text, kb := watchListMessage(subs)
+	_, editErr := b.bot.Edit(c.Message(), text, kb)
 	return editErr
 }
 

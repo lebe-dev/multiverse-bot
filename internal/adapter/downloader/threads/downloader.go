@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 
+	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/dlutil"
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 )
 
@@ -36,35 +36,8 @@ func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, e
 	}
 	d.log.Debug("threads extracted videos", "count", len(videos))
 
-	tmpDir, err := os.MkdirTemp("", "multiverse-threads-*")
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
-	}
-
-	filePath := filepath.Join(tmpDir, "video.mp4")
-	f, err := os.Create(filePath)
-	if err != nil {
-		_ = os.RemoveAll(tmpDir)
-		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
-	}
-
 	d.log.Debug("downloading threads video")
-	if err := d.client.downloadVideo(ctx, videos[0].URL, f); err != nil {
-		_ = f.Close()
-		_ = os.RemoveAll(tmpDir)
-		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
-	}
-	_ = f.Close()
-
-	info, err := os.Stat(filePath)
-	if err != nil {
-		_ = os.RemoveAll(tmpDir)
-		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
-	}
-
-	return &domain.Video{
-		URL:      url,
-		FilePath: filePath,
-		Size:     info.Size(),
-	}, nil
+	return dlutil.SaveToTemp("multiverse-threads-*", url, func(f *os.File) error {
+		return d.client.downloadVideo(ctx, videos[0].URL, f)
+	})
 }

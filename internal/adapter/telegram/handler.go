@@ -102,6 +102,71 @@ func (b *Bot) handleStartCommand(c tele.Context) error {
 
 // ── Main video handler ────────────────────────────────────────────────────────
 
+type downloadResult struct {
+	filePath string
+	fileSize int64
+	title    string
+	cleanup  func()
+}
+
+// downloadForURL tries quality downloader for YouTube, then composite, then plugins.
+// Returns errPluginHandled when a plugin took over (caller should return nil).
+func (b *Bot) downloadForURL(ctx context.Context, c tele.Context, url, quality string) (*downloadResult, error) {
+	platform := b.service.DetectPlatform(url)
+	b.log.Info("processing url",
+		"user", c.Sender().Username,
+		"user_id", c.Sender().ID,
+		"url", url,
+		"platform", platform.String(),
+		"quality", quality,
+	)
+
+	// Try quality downloader for YouTube first.
+	if platform == domain.PlatformYouTube && b.qualityDl != nil {
+		ytVideo, err := b.qualityDl.DownloadQuality(ctx, url, quality)
+		if err == nil {
+			dir := filepath.Dir(ytVideo.FilePath)
+			return &downloadResult{
+				filePath: ytVideo.FilePath,
+				fileSize: ytVideo.Size,
+				title:    ytVideo.Title,
+				cleanup:  func() { _ = os.RemoveAll(dir) },
+			}, nil
+		}
+		b.log.Warn("quality download failed, falling back to composite", "error", err)
+	}
+
+	// Fallback: composite downloader.
+	video, svcCleanup, svcErr := b.service.ProcessURL(ctx, url)
+	if svcErr != nil {
+		// If built-in fails with ErrUnsupportedPlatform, try plugins.
+		if errors.Is(svcErr, domain.ErrUnsupportedPlatform) && b.plugins != nil {
+			if pluginClient, pluginName, matchedPattern := b.plugins.FindByURL(url); pluginClient != nil {
+				return nil, pluginHandledError{c: c, client: pluginClient, name: pluginName, url: url, pattern: matchedPattern}
+			}
+		}
+		return nil, svcErr
+	}
+
+	return &downloadResult{
+		filePath: video.FilePath,
+		fileSize: video.Size,
+		title:    video.Title,
+		cleanup:  svcCleanup,
+	}, nil
+}
+
+// pluginHandledError signals that a plugin matched the URL and should handle the response.
+type pluginHandledError struct {
+	c       tele.Context
+	client  domain.PluginClient
+	name    string
+	url     string
+	pattern string
+}
+
+func (e pluginHandledError) Error() string { return "plugin handled" }
+
 func (b *Bot) handleText(c tele.Context) error {
 	url := extractURL(c.Text())
 	if url == "" {
@@ -113,10 +178,7 @@ func (b *Bot) handleText(c tele.Context) error {
 		return c.Send(fmt.Sprintf("⚠️ Мало места на диске (%d МБ). Попробуйте позже.", free/(1024*1024)))
 	}
 
-	st := defaultSettings()
-	if b.settings != nil {
-		st = b.settings.Get(c.Sender().ID)
-	}
+	st := b.userSettings(c.Sender().ID)
 	quality := st.Quality
 
 	startedAt := time.Now()
@@ -125,88 +187,45 @@ func (b *Bot) handleText(c tele.Context) error {
 	dlCtx, dlCancel := context.WithTimeout(context.Background(), downloadTimeout)
 	defer dlCancel()
 
-	var (
-		filePath string
-		fileSize int64 // raw bytes — no precision loss
-		title    string
-		cleanup  func()
-	)
-
-	// Fix #4: only use quality downloader for YouTube, not for all URLs.
-	platform := b.service.DetectPlatform(url)
-	b.log.Info("processing url",
-		"user", c.Sender().Username,
-		"user_id", c.Sender().ID,
-		"url", url,
-		"platform", platform.String(),
-		"quality", quality,
-	)
-	if platform == domain.PlatformYouTube && b.qualityDl != nil {
-		ytVideo, err := b.qualityDl.DownloadQuality(dlCtx, url, quality)
-		if err == nil {
-			filePath = ytVideo.FilePath
-			fileSize = ytVideo.Size
-			title = ytVideo.Title
-			dir := filepath.Dir(filePath)
-			cleanup = func() { _ = os.RemoveAll(dir) }
-		} else {
-			b.log.Warn("quality download failed, falling back to composite", "error", err)
+	result, err := b.downloadForURL(dlCtx, c, url, quality)
+	if err != nil {
+		b.deleteMsg(statusMsg)
+		var pe pluginHandledError
+		if errors.As(err, &pe) {
+			return b.handlePluginURL(pe.c, pe.client, pe.name, pe.url, pe.pattern)
 		}
+		return b.handleError(c, err)
 	}
 
-	// Fallback: composite downloader for non-YouTube or if quality download failed.
-	if cleanup == nil {
-		video, svcCleanup, svcErr := b.service.ProcessURL(dlCtx, url)
-		if svcErr != nil {
-			// If built-in fails with ErrUnsupportedPlatform, try plugins.
-			if errors.Is(svcErr, domain.ErrUnsupportedPlatform) && b.plugins != nil {
-				if pluginClient, pluginName, matchedPattern := b.plugins.FindByURL(url); pluginClient != nil {
-					b.deleteMsg(statusMsg)
-					return b.handlePluginURL(c, pluginClient, pluginName, url, matchedPattern)
-				}
-			}
-			b.deleteMsg(statusMsg)
-			return b.handleError(c, svcErr)
-		}
-		filePath = video.FilePath
-		fileSize = video.Size
-		title = video.Title
-		cleanup = svcCleanup
-	}
-
-	sizeMB := fileSize / (1024 * 1024)
+	sizeMB := result.fileSize / (1024 * 1024)
 	downloadedAt := time.Now()
-	dlDur := downloadedAt.Sub(startedAt)
 	b.log.Info("downloaded",
 		"user", c.Sender().Username,
 		"user_id", c.Sender().ID,
 		"url", url,
 		"size_mb", sizeMB,
 		"quality", quality,
-		"download_s", int(dlDur.Seconds()),
+		"download_s", int(downloadedAt.Sub(startedAt).Seconds()),
 	)
 
 	b.deleteMsg(statusMsg)
-
-	// Remember last URL for this user (/save without args)
 	b.lastURL.Store(c.Sender().ID, url)
 
-	// Apply caption setting
-	caption := title
+	caption := result.title
 	if !st.Caption {
 		caption = ""
 	}
 
 	// Fix #2: use raw byte size for limit comparison — no integer truncation.
 	var sendErr error
-	if fileSize <= b.tgLimit {
-		defer cleanup()
-		sendErr = b.sendVideo(b.bot, c, filePath, caption)
-	} else if b.localBot != nil && fileSize < localBotAPIMaxSize {
-		sendErr = b.sendVideo(b.localBot, c, filePath, caption)
-		cleanup()
+	if result.fileSize <= b.tgLimit {
+		defer result.cleanup()
+		sendErr = b.sendVideo(b.bot, c, result.filePath, caption)
+	} else if b.localBot != nil && result.fileSize < localBotAPIMaxSize {
+		sendErr = b.sendVideo(b.localBot, c, result.filePath, caption)
+		result.cleanup()
 	} else {
-		cleanup()
+		result.cleanup()
 		b.log.Warn("video too large for telegram",
 			"user", c.Sender().Username,
 			"user_id", c.Sender().ID,
@@ -258,10 +277,7 @@ func (b *Bot) sendVideo(client *tele.Bot, c tele.Context, filePath, caption stri
 // ── /settings command ─────────────────────────────────────────────────────────
 
 func (b *Bot) handleSettingsCommand(c tele.Context) error {
-	st := defaultSettings()
-	if b.settings != nil {
-		st = b.settings.Get(c.Sender().ID)
-	}
+	st := b.userSettings(c.Sender().ID)
 	return c.Send(settingsText(st), &tele.SendOptions{
 		ParseMode:   tele.ModeHTML,
 		ReplyMarkup: settingsKeyboard(st),
@@ -366,10 +382,7 @@ func (b *Bot) callbackSetQuality(c tele.Context, quality string) error {
 				"key", "quality",
 				"value", quality,
 			)
-			st := defaultSettings()
-			if b.settings != nil {
-				st = b.settings.Get(c.Sender().ID)
-			}
+			st := b.userSettings(c.Sender().ID)
 			_ = c.Respond(&tele.CallbackResponse{Text: quality + " ✓"})
 			return c.Edit(settingsText(st), &tele.SendOptions{
 				ParseMode:   tele.ModeHTML,
@@ -391,10 +404,7 @@ func (b *Bot) callbackSetCaption(c tele.Context, value string) error {
 		"key", "caption",
 		"value", enabled,
 	)
-	st := defaultSettings()
-	if b.settings != nil {
-		st = b.settings.Get(c.Sender().ID)
-	}
+	st := b.userSettings(c.Sender().ID)
 	label := "Подпись включена ✓"
 	if !enabled {
 		label = "Подпись отключена"
@@ -768,6 +778,13 @@ func (b *Bot) saveBotFile(c tele.Context, doc *tele.Document, destPath string, m
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+func (b *Bot) userSettings(userID int64) UserSettings {
+	if b.settings != nil {
+		return b.settings.Get(userID)
+	}
+	return defaultSettings()
+}
 
 var urlRe = regexp.MustCompile(`https?://\S+`)
 

@@ -5,6 +5,7 @@
 !PLUGINS.md
 !DEV.md
 !CLAUDE.md
+!CHANGELOG.md
 !.claude/rules/*.md
 /.env
 /bin

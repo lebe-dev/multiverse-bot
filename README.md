@@ -203,13 +203,3 @@ just docker-logs  # логи
 ## Плагины
 
 Бот поддерживает расширение через внешние HTTP-плагины — новые команды и обработчики URL без изменения кода бота. Смотри [PLUGINS.md](PLUGINS.md).
-
-## Changelog
-
-### Текущая версия (форк от lebe-dev/multiverse-bot)
-
-- **fix:** убран YouTube из поддерживаемых платформ Cobalt — он возвращал `error.api.youtube.login`; YouTube обрабатывается только через yt-dlp
-- **fix:** ошибка компиляции в `handler.go` — `c.Send()` в telebot.v4 возвращает 1 значение
-- **fix:** yt-dlp теперь использует Node.js как JS-runtime (`--js-runtimes node`) для решения YouTube signature/n-challenge на серверных IP
-- **feat:** управление cookies через Telegram — команда `/cookies` и загрузка файла прямо в чат с ботом
-- **feat:** переменная `YTDLP_COOKIES_FILE` для указания пути к cookies

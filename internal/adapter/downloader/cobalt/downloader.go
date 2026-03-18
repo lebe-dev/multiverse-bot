@@ -9,9 +9,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 
+	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/dlutil"
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 )
 
@@ -93,31 +93,12 @@ func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, e
 	}
 
 	d.log.Debug("downloading cobalt file")
-	tmpDir, err := os.MkdirTemp("", "multiverse-cobalt-*")
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
-	}
-
-	filePath := filepath.Join(tmpDir, "video.mp4")
-	if err := downloadFile(ctx, d.httpClient, cr.URL, filePath); err != nil {
-		_ = os.RemoveAll(tmpDir)
-		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
-	}
-
-	info, err := os.Stat(filePath)
-	if err != nil {
-		_ = os.RemoveAll(tmpDir)
-		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
-	}
-
-	return &domain.Video{
-		URL:      url,
-		FilePath: filePath,
-		Size:     info.Size(),
-	}, nil
+	return dlutil.SaveToTemp("multiverse-cobalt-*", url, func(f *os.File) error {
+		return downloadToFile(ctx, d.httpClient, cr.URL, f)
+	})
 }
 
-func downloadFile(ctx context.Context, client *http.Client, url, dest string) error {
+func downloadToFile(ctx context.Context, client *http.Client, url string, f *os.File) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
@@ -132,12 +113,6 @@ func downloadFile(ctx context.Context, client *http.Client, url, dest string) er
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
-
-	f, err := os.Create(dest)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
 
 	_, err = io.Copy(f, resp.Body)
 	return err
