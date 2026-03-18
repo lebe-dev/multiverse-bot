@@ -1,6 +1,7 @@
 /multiverse-bot
 .DS_Store
 *.md
+!/docs/*.md
 !README.md
 !PLUGINS.md
 !DEV.md
@@ -9,6 +10,7 @@
 !.claude/rules/*.md
 /.env
 /bin
+/bot
 
 # Runtime data — user preferences and tokens, never commit
 /user_settings.json

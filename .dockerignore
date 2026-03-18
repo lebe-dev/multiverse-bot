@@ -3,3 +3,4 @@
 *.md
 /.env
 /bin
+/bot
