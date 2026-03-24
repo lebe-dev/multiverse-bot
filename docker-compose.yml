@@ -3,7 +3,6 @@ volumes:
   telegram-bot-api-data:
 
 services:
-
   # ── Telegram Local Bot API ──────────────────────────────────────────────────
   # Allows sending files up to 2 GB. Bot connects via LOCAL_BOT_API_URL.
   # Requires TELEGRAM_API_ID and TELEGRAM_API_HASH in .env.
@@ -27,6 +26,7 @@ services:
   # ── Bot ─────────────────────────────────────────────────────────────────────
   bot:
     build: .
+    #image: tinyops/multiverse-bot:latest
     restart: unless-stopped
     env_file:
       - .env
