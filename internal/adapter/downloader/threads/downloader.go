@@ -25,6 +25,11 @@ func (d *Downloader) Supports(p domain.Platform) bool {
 	return p == domain.PlatformThreads
 }
 
+// DownloadMedia is not implemented for threads; composite downloader will fall back to Download.
+func (d *Downloader) DownloadMedia(_ context.Context, _ string) (*domain.MediaResult, error) {
+	return nil, domain.ErrNotImplemented
+}
+
 func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, error) {
 	d.log.Debug("extracting threads video", "url", url)
 	videos, err := d.client.extract(ctx, url)

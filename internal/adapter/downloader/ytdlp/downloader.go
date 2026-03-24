@@ -46,6 +46,11 @@ func (d *Downloader) Supports(p domain.Platform) bool {
 	return d.supported[p]
 }
 
+// DownloadMedia is not implemented for yt-dlp; composite downloader will fall back to Download.
+func (d *Downloader) DownloadMedia(_ context.Context, _ string) (*domain.MediaResult, error) {
+	return nil, domain.ErrNotImplemented
+}
+
 // Download downloads at 720p — the standard quality for Telegram delivery.
 func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, error) {
 	return d.download(ctx, normalizeURL(url), format720)

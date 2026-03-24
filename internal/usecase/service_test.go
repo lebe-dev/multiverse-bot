@@ -21,12 +21,35 @@ func (m *mockDetector) Detect(string) domain.Platform {
 }
 
 type mockDownloader struct {
-	video *domain.Video
-	err   error
+	video       *domain.Video
+	err         error
+	mediaResult *domain.MediaResult
+	mediaErr    error
 }
 
 func (m *mockDownloader) Download(_ context.Context, _ string, _ domain.Platform) (*domain.Video, error) {
 	return m.video, m.err
+}
+
+func (m *mockDownloader) DownloadMedia(_ context.Context, _ string, _ domain.Platform) (*domain.MediaResult, error) {
+	if m.mediaErr != nil {
+		return nil, m.mediaErr
+	}
+	if m.mediaResult != nil {
+		return m.mediaResult, nil
+	}
+	// Default: wrap video in MediaResult for backwards compat.
+	if m.video != nil {
+		return &domain.MediaResult{
+			Items: []domain.MediaItem{{
+				Type:     domain.MediaVideo,
+				FilePath: m.video.FilePath,
+				Size:     m.video.Size,
+			}},
+			Title: m.video.Title,
+		}, nil
+	}
+	return nil, m.err
 }
 
 func newLogger() *slog.Logger {

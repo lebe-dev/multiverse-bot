@@ -7,6 +7,7 @@ var (
 	ErrVideoTooLarge       = errors.New("video is too large")
 	ErrDownloadFailed      = errors.New("download failed")
 	ErrUnauthorized        = errors.New("user not authorized")
+	ErrNotImplemented      = errors.New("not implemented")
 
 	ErrAlreadySubscribed = errors.New("already subscribed")
 	ErrNotSubscribed     = errors.New("not subscribed")

@@ -13,6 +13,7 @@ const defaultMaxFileSize = 50 * 1024 * 1024 // 50MB
 
 type VideoDownloader interface {
 	Download(ctx context.Context, url string, platform domain.Platform) (*domain.Video, error)
+	DownloadMedia(ctx context.Context, url string, platform domain.Platform) (*domain.MediaResult, error)
 }
 
 type VideoService struct {
@@ -49,6 +50,39 @@ func (s *VideoService) DetectPlatform(url string) domain.Platform {
 // The service no longer enforces it — the handler decides (Telegram, local API, Drive).
 func (s *VideoService) MaxFileSize() int64 {
 	return s.maxSize
+}
+
+// ProcessMedia detects the platform and downloads all media items.
+// Returns MediaResult and a cleanup func. Caller must defer cleanup.
+func (s *VideoService) ProcessMedia(ctx context.Context, url string) (*domain.MediaResult, func(), error) {
+	platform := s.detector.Detect(url)
+	s.log.Debug("platform detected", "url", url, "platform", platform.String())
+	if platform == domain.PlatformUnknown {
+		return nil, nil, domain.ErrUnsupportedPlatform
+	}
+
+	s.log.Info("downloading media", "url", url, "platform", platform.String())
+
+	result, err := s.downloader.DownloadMedia(ctx, url, platform)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	result.Platform = platform
+	result.URL = url
+
+	cleanup := func() {
+		seen := make(map[string]bool)
+		for _, item := range result.Items {
+			dir := filepath.Dir(item.FilePath)
+			if !seen[dir] {
+				seen[dir] = true
+				_ = os.RemoveAll(dir)
+			}
+		}
+	}
+
+	return result, cleanup, nil
 }
 
 // ProcessURL detects the platform, downloads the video, and returns it.

@@ -30,6 +30,11 @@ func (d *Downloader) Supports(p domain.Platform) bool {
 	return p == domain.PlatformYouTube
 }
 
+// DownloadMedia is not implemented for savevids; composite downloader will fall back to Download.
+func (d *Downloader) DownloadMedia(_ context.Context, _ string) (*domain.MediaResult, error) {
+	return nil, domain.ErrNotImplemented
+}
+
 func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, error) {
 	d.log.Debug("fetching savevids URL", "url", url)
 	downloadURL, err := d.client.fetchVideoURL(ctx, url, d.maxSize)

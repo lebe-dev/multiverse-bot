@@ -181,78 +181,157 @@ func (b *Bot) handleText(c tele.Context) error {
 	st := b.userSettings(c.Sender().ID)
 	quality := st.Quality
 
+	// YouTube with quality downloader — separate path (preserves existing logic).
+	platform := b.service.DetectPlatform(url)
+	if platform == domain.PlatformYouTube && b.qualityDl != nil {
+		startedAt := time.Now()
+		statusMsg, _ := b.bot.Send(c.Recipient(), fmt.Sprintf("⏳ Скачиваю %s...", quality))
+
+		dlCtx, dlCancel := context.WithTimeout(context.Background(), downloadTimeout)
+		defer dlCancel()
+
+		result, err := b.downloadForURL(dlCtx, c, url, quality)
+		if err != nil {
+			b.deleteMsg(statusMsg)
+			var pe pluginHandledError
+			if errors.As(err, &pe) {
+				return b.handlePluginURL(pe.c, pe.client, pe.name, pe.url, pe.pattern)
+			}
+			return b.handleError(c, err)
+		}
+
+		sizeMB := result.fileSize / (1024 * 1024)
+		downloadedAt := time.Now()
+		b.log.Info("downloaded",
+			"user", c.Sender().Username,
+			"user_id", c.Sender().ID,
+			"url", url,
+			"size_mb", sizeMB,
+			"quality", quality,
+			"download_s", int(downloadedAt.Sub(startedAt).Seconds()),
+		)
+
+		b.deleteMsg(statusMsg)
+		b.lastURL.Store(c.Sender().ID, url)
+
+		caption := result.title
+		if !st.Caption {
+			caption = ""
+		}
+
+		var sendErr error
+		if result.fileSize <= b.tgLimit {
+			defer result.cleanup()
+			sendErr = b.sendVideo(b.bot, c, result.filePath, caption)
+		} else if b.localBot != nil && result.fileSize < localBotAPIMaxSize {
+			sendErr = b.sendVideo(b.localBot, c, result.filePath, caption)
+			result.cleanup()
+		} else {
+			result.cleanup()
+			b.log.Warn("video too large for telegram",
+				"user", c.Sender().Username,
+				"user_id", c.Sender().ID,
+				"url", url,
+				"size_mb", sizeMB,
+			)
+			return c.Send(fmt.Sprintf(
+				"❌ Видео %d МБ — слишком большое.\n\nИспользуйте /save %s для загрузки в Google Drive.",
+				sizeMB, url,
+			))
+		}
+
+		if sendErr == nil {
+			b.log.Info("sent",
+				"user", c.Sender().Username,
+				"user_id", c.Sender().ID,
+				"url", url,
+				"size_mb", sizeMB,
+				"send_s", int(time.Since(downloadedAt).Seconds()),
+				"total_s", int(time.Since(startedAt).Seconds()),
+			)
+		} else {
+			b.log.Error("send failed",
+				"user", c.Sender().Username,
+				"user_id", c.Sender().ID,
+				"url", url,
+				"size_mb", sizeMB,
+				"error", sendErr,
+			)
+		}
+		return sendErr
+	}
+
+	// All other platforms — unified media path.
+	return b.handleMediaURL(c, url, st)
+}
+
+func (b *Bot) handleMediaURL(c tele.Context, url string, st UserSettings) error {
 	startedAt := time.Now()
-	statusMsg, _ := b.bot.Send(c.Recipient(), fmt.Sprintf("⏳ Скачиваю %s...", quality))
+	statusMsg, _ := b.bot.Send(c.Recipient(), "⏳ Скачиваю медиа...")
 
 	dlCtx, dlCancel := context.WithTimeout(context.Background(), downloadTimeout)
 	defer dlCancel()
 
-	result, err := b.downloadForURL(dlCtx, c, url, quality)
+	result, cleanup, err := b.service.ProcessMedia(dlCtx, url)
 	if err != nil {
 		b.deleteMsg(statusMsg)
-		var pe pluginHandledError
-		if errors.As(err, &pe) {
-			return b.handlePluginURL(pe.c, pe.client, pe.name, pe.url, pe.pattern)
+		if errors.Is(err, domain.ErrUnsupportedPlatform) && b.plugins != nil {
+			if pluginClient, pluginName, matchedPattern := b.plugins.FindByURL(url); pluginClient != nil {
+				return b.handlePluginURL(c, pluginClient, pluginName, url, matchedPattern)
+			}
 		}
 		return b.handleError(c, err)
 	}
+	defer cleanup()
 
-	sizeMB := result.fileSize / (1024 * 1024)
-	downloadedAt := time.Now()
+	sizeMB := result.MaxItemSize() / (1024 * 1024)
 	b.log.Info("downloaded",
 		"user", c.Sender().Username,
 		"user_id", c.Sender().ID,
 		"url", url,
-		"size_mb", sizeMB,
-		"quality", quality,
-		"download_s", int(downloadedAt.Sub(startedAt).Seconds()),
+		"items", len(result.Items),
+		"max_item_mb", sizeMB,
+		"download_s", int(time.Since(startedAt).Seconds()),
 	)
 
 	b.deleteMsg(statusMsg)
 	b.lastURL.Store(c.Sender().ID, url)
 
-	caption := result.title
+	caption := result.Title
 	if !st.Caption {
 		caption = ""
 	}
 
-	// Fix #2: use raw byte size for limit comparison — no integer truncation.
-	var sendErr error
-	if result.fileSize <= b.tgLimit {
-		defer result.cleanup()
-		sendErr = b.sendVideo(b.bot, c, result.filePath, caption)
-	} else if b.localBot != nil && result.fileSize < localBotAPIMaxSize {
-		sendErr = b.sendVideo(b.localBot, c, result.filePath, caption)
-		result.cleanup()
-	} else {
-		result.cleanup()
-		b.log.Warn("video too large for telegram",
+	maxItem := result.MaxItemSize()
+	if maxItem > b.tgLimit && b.localBot == nil {
+		b.log.Warn("media too large for telegram",
 			"user", c.Sender().Username,
 			"user_id", c.Sender().ID,
 			"url", url,
 			"size_mb", sizeMB,
 		)
-		return c.Send(fmt.Sprintf(
-			"❌ Видео %d МБ — слишком большое.\n\nИспользуйте /save %s для загрузки в Google Drive.",
-			sizeMB, url,
-		))
+		return c.Send(fmt.Sprintf("❌ Файл %d МБ — слишком большой для Telegram.", sizeMB))
 	}
 
+	client := b.bot
+	if maxItem > b.tgLimit && b.localBot != nil {
+		client = b.localBot
+	}
+
+	sendErr := b.sendMedia(client, c, result, caption)
 	if sendErr == nil {
 		b.log.Info("sent",
 			"user", c.Sender().Username,
 			"user_id", c.Sender().ID,
 			"url", url,
-			"size_mb", sizeMB,
-			"send_s", int(time.Since(downloadedAt).Seconds()),
-			"total_s", int(time.Since(startedAt).Seconds()),
+			"items", len(result.Items),
+			"send_s", int(time.Since(startedAt).Seconds()),
 		)
 	} else {
 		b.log.Error("send failed",
 			"user", c.Sender().Username,
 			"user_id", c.Sender().ID,
 			"url", url,
-			"size_mb", sizeMB,
 			"error", sendErr,
 		)
 	}
@@ -271,6 +350,61 @@ func (b *Bot) sendVideo(client *tele.Bot, c tele.Context, filePath, caption stri
 		video.Caption = caption
 	}
 	_, err := client.Send(c.Recipient(), video)
+	return err
+}
+
+func (b *Bot) sendPhoto(client *tele.Bot, c tele.Context, filePath, caption string) error {
+	_ = c.Notify(tele.UploadingPhoto)
+	photo := &tele.Photo{File: tele.FromDisk(filePath)}
+	if caption != "" {
+		photo.Caption = caption
+	}
+	_, err := client.Send(c.Recipient(), photo)
+	return err
+}
+
+func (b *Bot) sendMedia(client *tele.Bot, c tele.Context, result *domain.MediaResult, caption string) error {
+	if len(result.Items) == 1 {
+		item := result.Items[0]
+		if item.Type == domain.MediaPhoto {
+			return b.sendPhoto(client, c, item.FilePath, caption)
+		}
+		return b.sendVideo(client, c, item.FilePath, caption)
+	}
+
+	if result.HasVideo() {
+		_ = c.Notify(tele.UploadingVideo)
+	} else {
+		_ = c.Notify(tele.UploadingPhoto)
+	}
+
+	var album tele.Album
+	for i, item := range result.Items {
+		if i >= 10 {
+			break
+		}
+		switch item.Type {
+		case domain.MediaPhoto:
+			photo := &tele.Photo{File: tele.FromDisk(item.FilePath)}
+			if i == 0 && caption != "" {
+				photo.Caption = caption
+			}
+			album = append(album, photo)
+		case domain.MediaVideo:
+			w, h := probe.VideoDimensions(context.Background(), item.FilePath)
+			video := &tele.Video{
+				File:   tele.FromDisk(item.FilePath),
+				Width:  w,
+				Height: h,
+			}
+			if i == 0 && caption != "" {
+				video.Caption = caption
+			}
+			album = append(album, video)
+		}
+	}
+
+	_, err := client.SendAlbum(c.Recipient(), album)
 	return err
 }
 
