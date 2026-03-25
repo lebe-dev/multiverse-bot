@@ -33,10 +33,11 @@ RUN apk add --no-cache wget \
 # ── Stage 3: minimal runtime ─────────────────────────────────────────────────
 FROM alpine:3.23.3
 
-RUN apk add --no-cache ca-certificates ffmpeg
+RUN apk add --no-cache ca-certificates ffmpeg nodejs
 
 RUN addgroup -g 10001 -S bot \
-    && adduser  -u 10001 -S -G bot -H -s /sbin/nologin bot
+    && adduser  -u 10001 -S -G bot -H -s /sbin/nologin bot \
+    && mkdir -p /data && chown bot:bot /data
 
 COPY --from=builder          /bot                  /bot
 COPY --from=ytdlp  /usr/local/bin/yt-dlp  /usr/local/bin/yt-dlp
