@@ -36,7 +36,10 @@ services:
       SQLITE_PATH: /data/bot.db
     volumes:
       - bot-data:/data
-      - ./cookies.txt:/app/cookies.txt
+      - ./cookies.txt:/app/cookies.txt:ro
+      # Uncomment to persist Google Drive tokens and per-user settings across restarts:
+      # - ./user_drive_tokens.json:/app/user_drive_tokens.json
+      # - ./user_settings.json:/app/user_settings.json
     depends_on:
       - telegram-bot-api
       - cobalt
