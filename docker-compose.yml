@@ -36,7 +36,7 @@ services:
       SQLITE_PATH: /data/bot.db
     volumes:
       - bot-data:/data
-      - ./cookies.txt:/app/cookies.txt:ro
+      - ./cookies.txt:/app/cookies.txt
     depends_on:
       - telegram-bot-api
       - cobalt
