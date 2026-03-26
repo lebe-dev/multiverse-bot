@@ -461,7 +461,8 @@ func settingsKeyboard(st UserSettings) *tele.ReplyMarkup {
 // ── Unified callback handler (settings + watch) ──────────────────────────────
 
 func (b *Bot) handleCallback(c tele.Context) error {
-	data := c.Data()
+	// telebot.v4 prepends \f to all kb.Data() callback values.
+	data := strings.TrimPrefix(c.Data(), "\f")
 
 	// Drive / admin callbacks use exact match.
 	switch {
@@ -681,7 +682,7 @@ func (b *Bot) callbackDriveConnect(c tele.Context) error {
 		return c.Edit("❌ Не удалось запустить авторизацию. Попробуйте позже.", driveConnectKeyboard())
 	}
 
-	_ = c.Edit(fmt.Sprintf(
+	authText := fmt.Sprintf(
 		"🔐 <b>Подключение Google Drive</b>\n\n"+
 			"<b>1.</b> Откройте: <code>%s</code>\n"+
 			"<b>2.</b> Введите код: <code>%s</code>\n\n"+
@@ -691,7 +692,10 @@ func (b *Bot) callbackDriveConnect(c tele.Context) error {
 		info.VerificationURI,
 		info.UserCode,
 		int(time.Until(info.Expiry).Minutes()),
-	), &tele.SendOptions{ParseMode: tele.ModeHTML})
+	)
+	if err := c.Edit(authText, &tele.SendOptions{ParseMode: tele.ModeHTML}); err != nil {
+		_ = c.Send(authText, &tele.SendOptions{ParseMode: tele.ModeHTML})
+	}
 
 	userID := c.Sender().ID
 	msg := c.Message()
