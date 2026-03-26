@@ -9,7 +9,6 @@ import (
 
 	tele "gopkg.in/telebot.v4"
 
-	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/probe"
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 	"gitlab.com/tiny-services/multiverse-bot/internal/usecase"
 )
@@ -127,8 +126,18 @@ func (b *Bot) handleDownloadCallback(c tele.Context, videoID string) error {
 		}
 		defer cleanup()
 
-		w, h := probe.VideoDimensions(ctx, video.FilePath)
-		if _, sendErr := b.bot.Send(c.Sender(), &tele.Video{File: tele.FromDisk(video.FilePath), Width: w, Height: h}); sendErr != nil {
+		st := b.userSettings(c.Sender().ID)
+		caption := video.Title
+		if !st.Caption {
+			caption = ""
+		}
+
+		client := b.bot
+		if video.Size > b.tgLimit && b.localBot != nil && video.Size < localBotAPIMaxSize {
+			client = b.localBot
+		}
+
+		if sendErr := b.sendVideo(client, c, video.FilePath, caption); sendErr != nil {
 			b.log.Error("failed to send video from callback", "error", sendErr)
 		}
 	}()
