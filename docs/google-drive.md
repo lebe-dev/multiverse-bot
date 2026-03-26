@@ -35,6 +35,33 @@ GOOGLE_CLIENT_SECRET=your_client_secret
 
 7. Перезапусти бота.
 
+## При использовании Docker Compose
+
+Перед первым запуском создай пустые файлы для хранения токенов и настроек:
+
+```bash
+echo '{}' > user_drive_tokens.json
+echo '{}' > user_settings.json
+```
+
+В `docker-compose.yml` раскомментируй строки в секции `volumes` сервиса `bot`:
+
+```yaml
+volumes:
+  - bot-data:/data
+  - ./cookies.txt:/app/cookies.txt
+  - ./user_drive_tokens.json:/app/user_drive_tokens.json
+  - ./user_settings.json:/app/user_settings.json
+```
+
+Без этого токены авторизации и настройки пользователей будут храниться только внутри контейнера и **сбрасываться при каждом перезапуске**.
+
+После изменений пересоздай контейнер:
+
+```bash
+docker compose up -d bot
+```
+
 ## Использование
 
 - `/auth` — привязать свой Google Drive (бот выдаст ссылку и код для входа)
