@@ -63,7 +63,7 @@ func (r *Resolver) Resolve(ctx context.Context, input string) (string, string, e
 }
 
 func (r *Resolver) resolveViaYtdlp(ctx context.Context, url string) (string, string, error) {
-	args := []string{"--print", "channel_id", "--print", "channel", "--playlist-items", "1", "--no-warnings"}
+	args := []string{"--print", "playlist_channel_id", "--print", "playlist_channel", "--playlist-items", "1", "--no-warnings", "--flat-playlist"}
 	if _, err := os.Stat(r.cookiesFile); err == nil {
 		args = append(args, "--cookies", r.cookiesFile)
 	}
