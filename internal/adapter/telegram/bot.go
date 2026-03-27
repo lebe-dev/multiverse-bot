@@ -35,6 +35,9 @@ type Bot struct {
 	debug   bool
 
 	pendingCookies sync.Map // map[int64]string — userID → "youtube"|"instagram"
+	pendingImport  sync.Map // map[int64]struct{} — userID → pending import
+
+	transferSvc *usecase.TransferService
 
 	settings *SettingsStore
 	lastURL  sync.Map // map[int64]string — last URL per user

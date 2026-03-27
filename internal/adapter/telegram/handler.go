@@ -105,6 +105,8 @@ func (b *Bot) buildHelpText(c tele.Context) string {
 		"/watch_youtube <url> — подписаться на YouTube-канал\n" +
 		"/watch_instagram_stories <url> — подписаться на сторис\n" +
 		"/watch_instagram_posts <url> — подписаться на посты\n" +
+		"/export — экспорт подписок и настроек\n" +
+		"/import — импорт подписок и настроек\n" +
 		"/details <url> — доступные форматы и размеры\n" +
 		"/save [url] — сохранить в Google Drive\n" +
 		"/drive — управление Google Drive\n" +
@@ -979,6 +981,13 @@ func (b *Bot) handleDocument(c tele.Context) error {
 	if doc == nil {
 		return nil
 	}
+
+	// Import (any user).
+	if _, ok := b.pendingImport.LoadAndDelete(c.Sender().ID); ok {
+		return b.handleImportFile(c, doc)
+	}
+
+	// Cookies (admin only).
 	if !b.IsAdmin(c.Sender().Username) {
 		return nil
 	}

@@ -195,10 +195,14 @@ func main() {
 		cfg.WatchInstagramPostsPollInterval, cfg.WatchMaxSubs, cfg.WatchMaxChannelsTotal,
 	)
 
+	// ── Transfer (export/import) ─────────────────────────────────────────
+	transferSvc := usecase.NewTransferService(store, store, store, feedFetcher, igFetcher, igPostFetcher, log)
+
 	bot.RegisterHandlers(cfg.AllowedUsers)
 	bot.RegisterWatchHandlers(watchSvc)
 	bot.RegisterStoryWatchHandlers(storyWatchSvc)
 	bot.RegisterPostWatchHandlers(postWatchSvc)
+	bot.RegisterTransferHandlers(transferSvc)
 
 	// ── Run ───────────────────────────────────────────────────────────────────
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
