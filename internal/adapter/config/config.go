@@ -52,6 +52,9 @@ type Config struct {
 	WatchMaxChannelsTotal int
 	SQLitePath            string
 
+	// Auto-download: send video file immediately instead of notification with button.
+	WatchAutoDownload bool
+
 	// Instagram story watcher
 	WatchInstagramPollInterval time.Duration
 }
@@ -86,6 +89,8 @@ func Load() (*Config, error) {
 		PluginsConfig: os.Getenv("PLUGINS_CONFIG"),
 
 		Debug: parseBool(os.Getenv("DEBUG")),
+
+		WatchAutoDownload: parseBool(os.Getenv("WATCH_AUTO_DOWNLOAD")),
 
 		WatchInstagramPollInterval: parseDuration(os.Getenv("WATCH_INSTAGRAM_POLL_INTERVAL"), "15m"),
 

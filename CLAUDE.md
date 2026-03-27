@@ -34,6 +34,7 @@ just docker-logs  # tail bot logs
 | `DEBUG` | no | `false` | Show verbose error details to admin chats |
 | `THREADS_ENGINE` | no | `default` | Threads engine: `default` (direct scraping with uTLS) or `lovethreads` (lovethreads.net proxy) |
 | `YOUTUBE_ENGINE` | no | `default` | YouTube engine: `default` (yt-dlp) or `savevids` (vidssave.com API) |
+| `WATCH_AUTO_DOWNLOAD` | no | `false` | `true` = send video file immediately on new video, `false` = send notification with Download button |
 | `BROWSER_USER_AGENT` | no | Chrome 131 UA | Browser User-Agent for Threads requests (only used with `default` engine) |
 | `PLUGINS_CONFIG` | no | — | Path to `plugins.yml` for plugin extensibility |
 
