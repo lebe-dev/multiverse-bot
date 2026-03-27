@@ -33,7 +33,9 @@ RUN apk add --no-cache wget \
 # ── Stage 3: minimal runtime ─────────────────────────────────────────────────
 FROM alpine:3.23.3
 
-RUN apk add --no-cache ca-certificates ffmpeg nodejs
+RUN apk add --no-cache ca-certificates ffmpeg nodejs tzdata
+
+ENV TZ=Europe/Moscow
 
 RUN addgroup -g 10001 -S bot \
     && adduser  -u 10001 -S -G bot -H -s /sbin/nologin bot \
