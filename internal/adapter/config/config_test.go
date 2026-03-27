@@ -18,7 +18,6 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("TELEGRAM_BOT_TOKEN", "test-token")
 	t.Setenv("COBALT_API_URL", "")
 	t.Setenv("YTDLP_PATH", "")
-	t.Setenv("YTDLP_COOKIES_FILE", "")
 	t.Setenv("LOG_LEVEL", "")
 	t.Setenv("ALLOWED_USERS", "")
 	t.Setenv("ADMIN_USERS", "")
@@ -33,9 +32,6 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.YtdlpPath != "yt-dlp" {
 		t.Errorf("expected default YtdlpPath 'yt-dlp', got %s", cfg.YtdlpPath)
-	}
-	if cfg.CookiesFile != "./cookies.txt" {
-		t.Errorf("expected default CookiesFile './cookies.txt', got %s", cfg.CookiesFile)
 	}
 	if cfg.TGLimit != 50*1024*1024 {
 		t.Errorf("expected TGLimit 50MB, got %d", cfg.TGLimit)
@@ -62,7 +58,6 @@ func TestLoad_ThreadsEngine(t *testing.T) {
 func TestLoad_CustomYtdlpPath(t *testing.T) {
 	t.Setenv("TELEGRAM_BOT_TOKEN", "test-token")
 	t.Setenv("YTDLP_PATH", "/custom/path/yt-dlp")
-	t.Setenv("YTDLP_COOKIES_FILE", "/custom/cookies.txt")
 
 	cfg, err := Load()
 	if err != nil {
@@ -71,9 +66,6 @@ func TestLoad_CustomYtdlpPath(t *testing.T) {
 
 	if cfg.YtdlpPath != "/custom/path/yt-dlp" {
 		t.Errorf("expected custom YtdlpPath, got %s", cfg.YtdlpPath)
-	}
-	if cfg.CookiesFile != "/custom/cookies.txt" {
-		t.Errorf("expected custom CookiesFile, got %s", cfg.CookiesFile)
 	}
 }
 

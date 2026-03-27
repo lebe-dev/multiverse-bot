@@ -24,10 +24,9 @@ type Config struct {
 	AllowedUsers     []string
 	AdminUsers       []string
 	CobaltAPIURL     string
-	TGLimit          int64  // max file size for standard Telegram API (bytes)
-	LocalBotAPIURL   string // local Telegram Bot API server URL for large files
-	CookiesFile      string
-	YtdlpPath        string
+	TGLimit        int64  // max file size for standard Telegram API (bytes)
+	LocalBotAPIURL string // local Telegram Bot API server URL for large files
+	YtdlpPath      string
 	BrowserUserAgent string
 	ThreadsEngine    string
 	YouTubeEngine    string
@@ -52,6 +51,9 @@ type Config struct {
 	WatchMaxSubs          int
 	WatchMaxChannelsTotal int
 	SQLitePath            string
+
+	// Instagram story watcher
+	WatchInstagramPollInterval time.Duration
 }
 
 func Load() (*Config, error) {
@@ -69,9 +71,8 @@ func Load() (*Config, error) {
 		AdminUsers:       parseAllowedUsers(os.Getenv("ADMIN_USERS")),
 		CobaltAPIURL:     getEnvOrDefault("COBALT_API_URL", "https://api.cobalt.tools"),
 		TGLimit:          parseMegabytes("TG_LIMIT", 50),
-		LocalBotAPIURL:   os.Getenv("LOCAL_BOT_API_URL"),
-		CookiesFile:      getEnvOrDefault("YTDLP_COOKIES_FILE", "./cookies.txt"),
-		YtdlpPath:        getEnvOrDefault("YTDLP_PATH", "yt-dlp"),
+		LocalBotAPIURL: os.Getenv("LOCAL_BOT_API_URL"),
+		YtdlpPath:      getEnvOrDefault("YTDLP_PATH", "yt-dlp"),
 		BrowserUserAgent: getEnvOrDefault("BROWSER_USER_AGENT", defaultBrowserUserAgent),
 		ThreadsEngine:    getEnvOrDefault("THREADS_ENGINE", "default"),
 		YouTubeEngine:    getEnvOrDefault("YOUTUBE_ENGINE", "default"),
@@ -85,6 +86,8 @@ func Load() (*Config, error) {
 		PluginsConfig: os.Getenv("PLUGINS_CONFIG"),
 
 		Debug: parseBool(os.Getenv("DEBUG")),
+
+		WatchInstagramPollInterval: parseDuration(os.Getenv("WATCH_INSTAGRAM_POLL_INTERVAL"), "15m"),
 
 		WatchPollInterval:     parseDuration(os.Getenv("WATCH_POLL_INTERVAL"), "15m"),
 		WatchMaxSubs:          parseInt(os.Getenv("WATCH_MAX_SUBSCRIPTIONS"), 20),

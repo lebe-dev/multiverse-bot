@@ -38,13 +38,14 @@ func TestNormalizeURL(t *testing.T) {
 }
 
 func TestNew(t *testing.T) {
-	d := New("/usr/bin/yt-dlp", "/tmp/cookies.txt", slog.Default())
+	cookieFn := func() string { return "/tmp/cookies.txt" }
+	d := New("/usr/bin/yt-dlp", cookieFn, slog.Default())
 
 	if d.execPath != "/usr/bin/yt-dlp" {
 		t.Errorf("expected execPath /usr/bin/yt-dlp, got %s", d.execPath)
 	}
-	if d.cookiesFile != "/tmp/cookies.txt" {
-		t.Errorf("expected cookiesFile /tmp/cookies.txt, got %s", d.cookiesFile)
+	if got := d.cookiePath(); got != "/tmp/cookies.txt" {
+		t.Errorf("expected cookiePath /tmp/cookies.txt, got %s", got)
 	}
 	if !d.Supports(1) { // PlatformYouTube
 		t.Error("expected YouTube to be supported")

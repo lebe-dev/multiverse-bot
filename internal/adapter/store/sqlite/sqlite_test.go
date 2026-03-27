@@ -186,3 +186,170 @@ func TestCleanupExpiredSeen(t *testing.T) {
 		t.Errorf("expected 0 deleted, got %d", deleted)
 	}
 }
+
+// ── Story subscription tests ─────────────────────────────────────────────────
+
+func TestAddStorySubscription(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	err := store.AddStorySubscription(ctx, 1, "natgeo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	err = store.AddStorySubscription(ctx, 1, "natgeo")
+	if !errors.Is(err, domain.ErrAlreadySubscribedStory) {
+		t.Errorf("expected ErrAlreadySubscribedStory, got %v", err)
+	}
+}
+
+func TestRemoveStorySubscription(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	_ = store.AddStorySubscription(ctx, 1, "natgeo")
+
+	err := store.RemoveStorySubscription(ctx, 1, "natgeo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	err = store.RemoveStorySubscription(ctx, 1, "natgeo")
+	if !errors.Is(err, domain.ErrNotSubscribedStory) {
+		t.Errorf("expected ErrNotSubscribedStory, got %v", err)
+	}
+}
+
+func TestRemoveStorySubscription_CleansUpSeenStories(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	_ = store.AddStorySubscription(ctx, 1, "natgeo")
+	_ = store.MarkStorySeen(ctx, 1, "natgeo", "story1")
+
+	seen, _ := store.HasSeenStory(ctx, 1, "natgeo", "story1")
+	if !seen {
+		t.Fatal("expected story to be seen before unsubscribe")
+	}
+
+	_ = store.RemoveStorySubscription(ctx, 1, "natgeo")
+
+	seen, _ = store.HasSeenStory(ctx, 1, "natgeo", "story1")
+	if seen {
+		t.Error("expected seen_stories to be cleaned up after last subscriber removed")
+	}
+}
+
+func TestGetStorySubscriptions(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	_ = store.AddStorySubscription(ctx, 1, "natgeo")
+	_ = store.AddStorySubscription(ctx, 1, "nasa")
+
+	subs, err := store.GetStorySubscriptions(ctx, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(subs) != 2 {
+		t.Errorf("expected 2 subscriptions, got %d", len(subs))
+	}
+}
+
+func TestCountStorySubscriptions(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	count, _ := store.CountStorySubscriptions(ctx, 1)
+	if count != 0 {
+		t.Errorf("expected 0, got %d", count)
+	}
+
+	_ = store.AddStorySubscription(ctx, 1, "natgeo")
+	_ = store.AddStorySubscription(ctx, 1, "nasa")
+
+	count, _ = store.CountStorySubscriptions(ctx, 1)
+	if count != 2 {
+		t.Errorf("expected 2, got %d", count)
+	}
+}
+
+func TestGetAllUniqueStoryUsernames(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	_ = store.AddStorySubscription(ctx, 1, "natgeo")
+	_ = store.AddStorySubscription(ctx, 2, "natgeo")
+	_ = store.AddStorySubscription(ctx, 1, "nasa")
+
+	usernames, err := store.GetAllUniqueStoryUsernames(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(usernames) != 2 {
+		t.Errorf("expected 2 unique usernames, got %d", len(usernames))
+	}
+}
+
+func TestGetStorySubscribers(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	_ = store.AddStorySubscription(ctx, 1, "natgeo")
+	_ = store.AddStorySubscription(ctx, 2, "natgeo")
+	_ = store.AddStorySubscription(ctx, 3, "nasa")
+
+	subs, err := store.GetStorySubscribers(ctx, "natgeo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(subs) != 2 {
+		t.Errorf("expected 2 subscribers for natgeo, got %d", len(subs))
+	}
+}
+
+func TestSeenStories(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	seen, err := store.HasSeenStory(ctx, 1, "natgeo", "story1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if seen {
+		t.Error("expected story to be unseen initially")
+	}
+
+	if err := store.MarkStorySeen(ctx, 1, "natgeo", "story1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	seen, err = store.HasSeenStory(ctx, 1, "natgeo", "story1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !seen {
+		t.Error("expected story to be seen after marking")
+	}
+
+	// Idempotent
+	if err := store.MarkStorySeen(ctx, 1, "natgeo", "story1"); err != nil {
+		t.Errorf("second MarkStorySeen should be idempotent: %v", err)
+	}
+}
+
+func TestCleanupExpiredSeenStories(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	_ = store.MarkStorySeen(ctx, 1, "natgeo", "story1")
+
+	deleted, err := store.CleanupExpiredSeenStories(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deleted != 0 {
+		t.Errorf("expected 0 deleted, got %d", deleted)
+	}
+}

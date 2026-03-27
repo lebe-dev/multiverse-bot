@@ -22,17 +22,17 @@ const format720 = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[heigh
 const formatBest = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
 
 type Downloader struct {
-	execPath    string
-	cookiesFile string
-	supported   map[domain.Platform]bool
-	log         *slog.Logger
+	execPath   string
+	cookiePath func() string
+	supported  map[domain.Platform]bool
+	log        *slog.Logger
 }
 
-func New(execPath, cookiesFile string, log *slog.Logger) *Downloader {
+func New(execPath string, cookiePath func() string, log *slog.Logger) *Downloader {
 	return &Downloader{
-		execPath:    execPath,
-		cookiesFile: cookiesFile,
-		log:         log,
+		execPath:   execPath,
+		cookiePath: cookiePath,
+		log:        log,
 		supported: map[domain.Platform]bool{
 			domain.PlatformYouTube:   true,
 			domain.PlatformInstagram: true,
@@ -87,8 +87,8 @@ func (d *Downloader) AnalyzeFormats(ctx context.Context, url string) (*domain.Fo
 	url = normalizeURL(url)
 
 	args := []string{"--dump-json", "--no-playlist", "--no-warnings", "--js-runtimes", "node"}
-	if _, err := os.Stat(d.cookiesFile); err == nil {
-		args = append(args, "--cookies", d.cookiesFile)
+	if cp := d.cookiePath(); cp != "" {
+		args = append(args, "--cookies", cp)
 	}
 	args = append(args, url)
 
@@ -125,8 +125,8 @@ func (d *Downloader) download(ctx context.Context, url, format string) (*domain.
 		JsRuntimes("node").
 		Print("after_move:%(title)s")
 
-	if _, err := os.Stat(d.cookiesFile); err == nil {
-		cmd = cmd.Cookies(d.cookiesFile)
+	if cp := d.cookiePath(); cp != "" {
+		cmd = cmd.Cookies(cp)
 	}
 
 	result, err := cmd.Run(ctx, url)

@@ -9,6 +9,7 @@ import (
 
 	tele "gopkg.in/telebot.v4"
 
+	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/cookies"
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 	"gitlab.com/tiny-services/multiverse-bot/internal/usecase"
 )
@@ -17,7 +18,8 @@ type Bot struct {
 	bot      *tele.Bot
 	localBot *tele.Bot // non-nil when LOCAL_BOT_API_URL is configured
 	service  *usecase.VideoService
-	watchSvc *usecase.WatchService
+	watchSvc      *usecase.WatchService
+	storyWatchSvc *usecase.StoryWatchService
 	log      *slog.Logger
 	adminIDs    map[string]struct{}
 	adminChats  *AdminChatStore
@@ -26,10 +28,12 @@ type Bot struct {
 	drive     domain.DriveManager      // per-user Google Drive upload
 	plugins   domain.PluginRegistry    // nil when no plugins configured
 
-	version     string
-	tgLimit     int64
-	cookiesFile string
-	debug       bool
+	version string
+	tgLimit int64
+	cookies *cookies.Manager
+	debug   bool
+
+	pendingCookies sync.Map // map[int64]string — userID → "youtube"|"instagram"
 
 	settings *SettingsStore
 	lastURL  sync.Map // map[int64]string — last URL per user
@@ -64,10 +68,10 @@ func (b *Bot) SetLocalBotAPI(url string) error {
 	return nil
 }
 
-func (b *Bot) SetConfig(version string, tgLimit int64, cookiesFile string, debug bool) {
+func (b *Bot) SetConfig(version string, tgLimit int64, cm *cookies.Manager, debug bool) {
 	b.version = version
 	b.tgLimit = tgLimit
-	b.cookiesFile = cookiesFile
+	b.cookies = cm
 	b.debug = debug
 }
 

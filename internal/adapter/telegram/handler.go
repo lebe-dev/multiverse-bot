@@ -44,17 +44,31 @@ func (b *Bot) RegisterHandlers(allowedUsers []string) {
 	}
 
 	b.bot.Handle("/start", b.handleStartCommand)
+	b.bot.Handle("/help", b.handleHelpCommand)
 	b.bot.Handle("/settings", b.handleSettingsCommand)
 	b.bot.Handle("/details", b.handleDetailsCommand)
 	b.bot.Handle("/save", b.handleSaveCommand)
 	b.bot.Handle("/drive", b.handleDriveCommand)
 	b.bot.Handle("/admin", b.handleAdminCommand)
 
+	b.bot.Handle("/add_youtube_cookies", b.handleAddCookies("youtube"))
+	b.bot.Handle("/add_instagram_cookies", b.handleAddCookies("instagram"))
+	b.bot.Handle("/delete_youtube_cookies", b.handleDeleteCookies("youtube"))
+	b.bot.Handle("/delete_instagram_cookies", b.handleDeleteCookies("instagram"))
+
 	// Legacy redirects (one release cycle).
 	b.bot.Handle("/auth", func(c tele.Context) error { return c.Send("Команда перенесена → /drive") })
 	b.bot.Handle("/disconnect", func(c tele.Context) error { return c.Send("Команда перенесена → /drive") })
 	b.bot.Handle("/config", func(c tele.Context) error { return c.Send("Команда перенесена → /admin") })
-	b.bot.Handle("/cookies", func(c tele.Context) error { return c.Send("Команда перенесена → /admin") })
+	b.bot.Handle("/cookies", func(c tele.Context) error {
+		return c.Send("Команда удалена. Используйте /add_youtube_cookies или /add_instagram_cookies")
+	})
+	b.bot.Handle("/add-youtube-cookies", func(c tele.Context) error {
+		return c.Send("Команда переименована → /add_youtube_cookies")
+	})
+	b.bot.Handle("/add-instagram-cookies", func(c tele.Context) error {
+		return c.Send("Команда переименована → /add_instagram_cookies")
+	})
 
 	// Register plugin commands.
 	if b.plugins != nil {
@@ -75,16 +89,26 @@ func (b *Bot) RegisterHandlers(allowedUsers []string) {
 }
 
 func (b *Bot) handleStartCommand(c tele.Context) error {
+	return c.Send(b.buildHelpText(c))
+}
+
+func (b *Bot) handleHelpCommand(c tele.Context) error {
+	return c.Send(b.buildHelpText(c))
+}
+
+func (b *Bot) buildHelpText(c tele.Context) string {
 	msg := "Multiverse Bot\n\n" +
 		"Платформы: YouTube, Instagram, X (Twitter), Threads\n\n" +
+		"Отправьте ссылку — бот скачает и пришлёт видео.\n\n" +
 		"Команды:\n" +
 		"/settings — настройки (качество, подпись)\n" +
-		"/watch <url> — подписаться на YouTube-канал\n" +
+		"/watch_youtube <url> — подписаться на YouTube-канал\n" +
+		"/watch_instagram_stories <url> — подписаться на сторис\n" +
 		"/details <url> — доступные форматы и размеры\n" +
 		"/save [url] — сохранить в Google Drive\n" +
-		"/drive — управление Google Drive\n"
+		"/drive — управление Google Drive\n" +
+		"/help — список команд\n"
 
-	// Show plugin commands in help.
 	if b.plugins != nil {
 		for _, m := range b.plugins.AllManifests() {
 			for _, cmd := range m.Commands {
@@ -95,9 +119,13 @@ func (b *Bot) handleStartCommand(c tele.Context) error {
 
 	if b.IsAdmin(c.Sender().Username) {
 		msg += "\nАдмин:\n" +
-			"/admin — панель администратора"
+			"/admin — панель администратора\n" +
+			"/add_youtube_cookies — загрузить YouTube cookies\n" +
+			"/add_instagram_cookies — загрузить Instagram cookies\n" +
+			"/delete_youtube_cookies — удалить YouTube cookies\n" +
+			"/delete_instagram_cookies — удалить Instagram cookies\n"
 	}
-	return c.Send(msg)
+	return msg
 }
 
 // ── Main video handler ────────────────────────────────────────────────────────
@@ -168,6 +196,11 @@ type pluginHandledError struct {
 func (e pluginHandledError) Error() string { return "plugin handled" }
 
 func (b *Bot) handleText(c tele.Context) error {
+	// Check for pending cookies text paste.
+	if val, ok := b.pendingCookies.LoadAndDelete(c.Sender().ID); ok {
+		return b.saveCookiesFromText(c, val.(string))
+	}
+
 	url := extractURL(c.Text())
 	if url == "" {
 		return c.Send("Пожалуйста, отправьте корректную ссылку.")
@@ -477,6 +510,8 @@ func (b *Bot) handleCallback(c tele.Context) error {
 		return b.handleDownloadCallback(c, strings.TrimPrefix(data, "dl:"))
 	case strings.HasPrefix(data, "watch_rm:"):
 		return b.handleUnsubscribeCallback(c, strings.TrimPrefix(data, "watch_rm:"))
+	case strings.HasPrefix(data, "story_rm:"):
+		return b.handleStoryUnsubscribeCallback(c, strings.TrimPrefix(data, "story_rm:"))
 	}
 
 	// Plugin callbacks use "p_<name>|<callback_id>" format.
@@ -839,12 +874,18 @@ func (b *Bot) adminPanelMsg() string {
 	}
 
 	// Cookies status.
-	if info, err := os.Stat(b.cookiesFile); err == nil {
-		fmt.Fprintf(&sb, "\nCookies: ✅ (<code>%d</code> байт)\n", info.Size())
-	} else {
-		sb.WriteString("\nCookies: ❌\n")
+	sb.WriteString("\n")
+	for _, p := range []struct{ name, key string }{{"YouTube", "youtube"}, {"Instagram", "instagram"}} {
+		if b.cookies != nil && b.cookies.HasCookies(p.key) {
+			fmt.Fprintf(&sb, "%s Cookies: ✅\n", p.name)
+		} else {
+			fmt.Fprintf(&sb, "%s Cookies: ❌\n", p.name)
+		}
 	}
-	sb.WriteString("\nОтправьте <code>cookies.txt</code> для обновления.")
+	sb.WriteString("\n/add_youtube_cookies — загрузить YouTube cookies")
+	sb.WriteString("\n/add_instagram_cookies — загрузить Instagram cookies")
+	sb.WriteString("\n/delete_youtube_cookies — удалить YouTube cookies")
+	sb.WriteString("\n/delete_instagram_cookies — удалить Instagram cookies")
 	return sb.String()
 }
 
@@ -875,7 +916,58 @@ func (b *Bot) callbackAdminRefresh(c tele.Context) error {
 	})
 }
 
-const maxCookiesFileSize = 1 * 1024 * 1024
+const maxCookiesSize = 1 * 1024 * 1024
+
+func cookieInstructions(platform string) string {
+	label := "YouTube"
+	site := "youtube.com"
+	if platform == "instagram" {
+		label = "Instagram"
+		site = "instagram.com"
+	}
+	return fmt.Sprintf(
+		"<b>Загрузка %s cookies</b>\n\n"+
+			"Cookies нужны в формате Netscape (cookies.txt).\n\n"+
+			"<b>Как получить:</b>\n"+
+			"1. Установите расширение <b>Get cookies.txt LOCALLY</b> "+
+			"(Chrome/Firefox)\n"+
+			"2. Откройте %s и войдите в аккаунт\n"+
+			"3. Нажмите иконку расширения → Export\n"+
+			"4. Отправьте полученный файл сюда\n\n"+
+			"Также можно вставить содержимое как текстовое сообщение.",
+		label, site,
+	)
+}
+
+func (b *Bot) handleAddCookies(platform string) tele.HandlerFunc {
+	return func(c tele.Context) error {
+		if !b.IsAdmin(c.Sender().Username) {
+			return c.Send("❌ Нет доступа.")
+		}
+		b.pendingCookies.Store(c.Sender().ID, platform)
+		return c.Send(cookieInstructions(platform), &tele.SendOptions{ParseMode: tele.ModeHTML})
+	}
+}
+
+func (b *Bot) handleDeleteCookies(platform string) tele.HandlerFunc {
+	return func(c tele.Context) error {
+		if !b.IsAdmin(c.Sender().Username) {
+			return c.Send("❌ Нет доступа.")
+		}
+		label := "YouTube"
+		if platform == "instagram" {
+			label = "Instagram"
+		}
+		if b.cookies == nil || !b.cookies.HasCookies(platform) {
+			return c.Send(fmt.Sprintf("%s cookies не установлены.", label))
+		}
+		if err := b.cookies.DeleteCookies(context.Background(), platform); err != nil {
+			b.log.Error("failed to delete cookies", "platform", platform, "error", err)
+			return c.Send("Не удалось удалить cookies.")
+		}
+		return c.Send(fmt.Sprintf("✅ %s cookies удалены.", label))
+	}
+}
 
 func (b *Bot) handleDocument(c tele.Context) error {
 	doc := c.Message().Document
@@ -883,36 +975,83 @@ func (b *Bot) handleDocument(c tele.Context) error {
 		return nil
 	}
 	if !b.IsAdmin(c.Sender().Username) {
-		if doc.FileName == "cookies.txt" {
-			return c.Send("❌ Нет доступа.")
-		}
 		return nil
 	}
-	if doc.FileName != "cookies.txt" {
-		return c.Send("Принимаются файлы: <code>cookies.txt</code>.", &tele.SendOptions{ParseMode: tele.ModeHTML})
+
+	val, ok := b.pendingCookies.LoadAndDelete(c.Sender().ID)
+	if !ok {
+		return c.Send("Используйте /add\\_youtube\\_cookies или /add\\_instagram\\_cookies для загрузки cookies.")
 	}
-	return b.saveBotFile(c, doc, b.cookiesFile, maxCookiesFileSize, "✅ Cookies сохранены.")
+
+	platform := val.(string)
+	return b.saveCookiesFromFile(c, doc, platform)
 }
 
-func (b *Bot) saveBotFile(c tele.Context, doc *tele.Document, destPath string, maxSize int64, successMsg string) error {
-	if doc.FileSize > maxSize {
-		return c.Send(fmt.Sprintf("Файл слишком большой (макс. %d МБ).", maxSize/(1024*1024)))
+func (b *Bot) saveCookiesFromFile(c tele.Context, doc *tele.Document, platform string) error {
+	if doc.FileSize > maxCookiesSize {
+		return c.Send("Файл слишком большой (макс. 1 МБ).")
 	}
 	reader, err := b.bot.File(&doc.File)
 	if err != nil {
 		return c.Send("Не удалось получить файл из Telegram.")
 	}
 	defer func() { _ = reader.Close() }()
-	f, err := os.Create(destPath)
+
+	data, err := io.ReadAll(io.LimitReader(reader, maxCookiesSize))
 	if err != nil {
-		return c.Send("Не удалось сохранить файл.")
+		return c.Send("Не удалось прочитать файл.")
 	}
-	defer func() { _ = f.Close() }()
-	if _, err := io.Copy(f, io.LimitReader(reader, maxSize)); err != nil {
-		return c.Send("Не удалось записать файл.")
+
+	return b.saveCookies(c, platform, data)
+}
+
+func (b *Bot) saveCookiesFromText(c tele.Context, platform string) error {
+	data := []byte(strings.TrimSpace(c.Text()))
+	if len(data) > maxCookiesSize {
+		return c.Send("Текст слишком большой (макс. 1 МБ).")
 	}
-	b.log.Info("file updated", "path", destPath)
-	return c.Send(successMsg)
+	return b.saveCookies(c, platform, data)
+}
+
+func (b *Bot) saveCookies(c tele.Context, platform string, data []byte) error {
+	if !looksLikeNetscapeCookies(data) {
+		return c.Send("⚠️ Содержимое не похоже на Netscape cookies формат.\n" +
+			"Ожидается файл с заголовком <code># Netscape HTTP Cookie File</code> " +
+			"или строки, разделённые табуляцией.", &tele.SendOptions{ParseMode: tele.ModeHTML})
+	}
+
+	if b.cookies == nil {
+		return c.Send("Хранилище cookies не настроено.")
+	}
+
+	if err := b.cookies.SaveCookies(context.Background(), platform, data); err != nil {
+		b.log.Error("failed to save cookies", "platform", platform, "error", err)
+		return c.Send("Не удалось сохранить cookies.")
+	}
+
+	label := "YouTube"
+	if platform == "instagram" {
+		label = "Instagram"
+	}
+	b.log.Info("cookies updated", "platform", platform, "size", len(data))
+	return c.Send(fmt.Sprintf("✅ %s cookies сохранены (%d байт).", label, len(data)))
+}
+
+func looksLikeNetscapeCookies(data []byte) bool {
+	text := string(data)
+	if strings.Contains(text, "# Netscape HTTP Cookie File") {
+		return true
+	}
+	for _, line := range strings.SplitN(text, "\n", 10) {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if len(strings.Split(line, "\t")) >= 7 {
+			return true
+		}
+	}
+	return false
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

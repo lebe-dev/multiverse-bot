@@ -15,6 +15,10 @@ var (
 	ErrChannelNotFound   = errors.New("channel not found")
 	ErrMaxChannels       = errors.New("global channel limit reached")
 
+	ErrAlreadySubscribedStory = errors.New("already subscribed to stories")
+	ErrNotSubscribedStory     = errors.New("not subscribed to stories")
+	ErrUsernameNotFound       = errors.New("instagram username not found")
+
 	ErrPluginUnavailable = errors.New("plugin unavailable")
 	ErrPluginTimeout     = errors.New("plugin timed out")
 )

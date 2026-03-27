@@ -15,12 +15,16 @@ import (
 
 const watchTimeout = 30 * time.Second
 
-// RegisterWatchHandlers registers /watch command handler.
+// RegisterWatchHandlers registers /watch_youtube command handler.
 // Callback handling for watch buttons (dl:, watch_rm:) is in the unified
 // handleCallback in handler.go.
 func (b *Bot) RegisterWatchHandlers(watchSvc *usecase.WatchService) {
 	b.watchSvc = watchSvc
-	b.bot.Handle("/watch", b.handleWatch)
+	b.bot.Handle("/watch_youtube", b.handleWatch)
+	b.bot.Handle("/watch", b.handleWatchAll)
+	b.bot.Handle("/watch-youtube", func(c tele.Context) error {
+		return c.Send("Команда переименована → /watch_youtube")
+	})
 }
 
 func (b *Bot) handleWatch(c tele.Context) error {
@@ -29,6 +33,50 @@ func (b *Bot) handleWatch(c tele.Context) error {
 		return b.handleWatchList(c)
 	}
 	return b.handleWatchSubscribe(c, payload)
+}
+
+func (b *Bot) handleWatchAll(c tele.Context) error {
+	ctx, cancel := context.WithTimeout(context.Background(), watchTimeout)
+	defer cancel()
+
+	ytSubs, err := b.watchSvc.ListSubscriptions(ctx, c.Sender().ID)
+	if err != nil {
+		b.log.Error("failed to list youtube subscriptions", "error", err)
+		return c.Send("Не удалось получить список подписок.")
+	}
+
+	var storySubs []domain.StorySubscription
+	if b.storyWatchSvc != nil {
+		storySubs, err = b.storyWatchSvc.ListSubscriptions(ctx, c.Sender().ID)
+		if err != nil {
+			b.log.Error("failed to list story subscriptions", "error", err)
+			return c.Send("Не удалось получить список подписок.")
+		}
+	}
+
+	if len(ytSubs) == 0 && len(storySubs) == 0 {
+		return c.Send("У вас нет активных подписок.\n\nДобавить:\n• /watch_youtube <url>\n• /watch_instagram_stories <url>")
+	}
+
+	text, kb := allWatchListMessage(ytSubs, storySubs)
+	return c.Send(text, kb)
+}
+
+func allWatchListMessage(ytSubs []domain.Subscription, storySubs []domain.StorySubscription) (string, *tele.ReplyMarkup) {
+	total := len(ytSubs) + len(storySubs)
+	var rows [][]tele.InlineButton
+	for _, sub := range ytSubs {
+		rows = append(rows, []tele.InlineButton{
+			{Text: "❌ " + sub.ChannelName + " (YouTube)", Data: "watch_rm:" + sub.ChannelID},
+		})
+	}
+	for _, sub := range storySubs {
+		rows = append(rows, []tele.InlineButton{
+			{Text: "❌ @" + sub.Username + " (Instagram)", Data: "story_rm:" + sub.Username},
+		})
+	}
+	text := fmt.Sprintf("📋 Подписки (%d):\n\nНажмите для отписки.", total)
+	return text, &tele.ReplyMarkup{InlineKeyboard: rows}
 }
 
 func (b *Bot) handleWatchList(c tele.Context) error {
@@ -42,7 +90,7 @@ func (b *Bot) handleWatchList(c tele.Context) error {
 	}
 
 	if len(subs) == 0 {
-		return c.Send("У вас нет активных подписок.\n\nОтправьте `/watch <url>` для подписки на YouTube-канал.")
+		return c.Send("У вас нет активных подписок.\n\nОтправьте /watch_youtube <url> для подписки на YouTube-канал.")
 	}
 
 	text, kb := watchListMessage(subs)
@@ -85,7 +133,7 @@ func watchListMessage(subs []domain.Subscription) (string, *tele.ReplyMarkup) {
 			{Text: "❌ " + sub.ChannelName, Data: "watch_rm:" + sub.ChannelID},
 		})
 	}
-	text := fmt.Sprintf("📺 Ваши подписки (%d):\n\nНажмите на канал для отписки.\n\nДобавить: `/watch <url>`", len(subs))
+	text := fmt.Sprintf("📺 Подписки на YouTube (%d):\n\nНажмите на канал для отписки.\n\nДобавить: `/watch\\-youtube <url>`", len(subs))
 	return text, &tele.ReplyMarkup{InlineKeyboard: rows}
 }
 
@@ -169,7 +217,7 @@ func (b *Bot) handleUnsubscribeCallback(c tele.Context, channelID string) error 
 	subs, err := b.watchSvc.ListSubscriptions(ctx, c.Sender().ID)
 	if err != nil || len(subs) == 0 {
 		_, editErr := b.bot.Edit(c.Message(),
-			"У вас нет активных подписок.\n\nОтправьте `/watch <url>` для подписки на YouTube-канал.",
+			"У вас нет активных подписок.\n\nОтправьте `/watch\\-youtube <url>` для подписки на YouTube-канал.",
 			&tele.ReplyMarkup{},
 		)
 		return editErr

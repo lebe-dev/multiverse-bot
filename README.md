@@ -26,7 +26,8 @@ docker compose up -d
 ## Документация
 
 - [Конфигурация](docs/configuration.md) — все переменные окружения и команды бота
-- [Cookies для YouTube](docs/cookies.md) — обязательно для серверного деплоя
+- [Cookies для YouTube](docs/cookies.md) — обязательно для серверного деплоя (загружаются через бота)
+- [Cookies для Instagram](docs/instagram-cookies.md) — для закрытых постов, Reels и сторис (загружаются через бота)
 - [Деплой на Ubuntu](docs/deploy.md) — systemd, зависимости
 - [Файлы >50 МБ (Local Bot API)](docs/local-bot-api.md) — снятие ограничения Telegram
 - [Google Drive](docs/google-drive.md) — сохранение видео в личный Drive

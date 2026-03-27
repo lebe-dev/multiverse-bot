@@ -29,7 +29,7 @@ just docker-logs  # tail bot logs
 | `ADMIN_USERS` | no | — | Comma-separated Telegram admin usernames |
 | `COBALT_API_URL` | no | `https://api.cobalt.tools` | Cobalt API base URL |
 | `YTDLP_PATH` | no | `yt-dlp` | Path to yt-dlp executable |
-| `YTDLP_COOKIES_FILE` | no | `./cookies.txt` | Path to cookies file for yt-dlp |
+| `WATCH_INSTAGRAM_POLL_INTERVAL` | no | `15m` | How often to check for new Instagram stories |
 | `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn`, `error` |
 | `DEBUG` | no | `false` | Show verbose error details to admin chats |
 | `THREADS_ENGINE` | no | `default` | Threads engine: `default` (direct scraping with uTLS) or `lovethreads` (lovethreads.net proxy) |
@@ -57,6 +57,9 @@ internal/
       lovethreads/ # Threads via lovethreads.net proxy service
       cobalt/      # Cobalt API backend (Instagram, Twitter, Threads)
       composite/ # Fan-out: tries each backend in order until one succeeds
+    watcher/
+      youtube/   # YouTube RSS feed fetcher and channel resolver
+      instagram/ # Instagram story fetcher and profile resolver (yt-dlp)
     plugin/    # Plugin extensibility (HTTP client, registry, executor)
     telegram/    # telebot.v4 bot, handlers, middleware
 cmd/bot/main.go  # Wires everything together
@@ -69,4 +72,5 @@ cmd/bot/main.go  # Wires everything together
 - **`VideoService.ProcessURL`** returns a cleanup `func()` that must be called after the video is sent — it deletes the temp dir.
 - **File size limit** is hardcoded to 50 MB (Telegram bot API limit). `MAX_FILE_SIZE` env var field exists in the struct but is not yet exposed.
 - **`ALLOWED_USERS`** middleware short-circuits at the Telegram handler layer; if the list is empty, all users are allowed.
+- **Cookies** (YouTube, Instagram) are stored in SQLite and managed via Telegram admin commands (`/add_youtube_cookies`, `/add_instagram_cookies`). A `CookieManager` materializes them to temp files for yt-dlp. No filesystem cookie files are needed.
 - **Plugin system** — external HTTP services extend the bot with new commands and URL handlers. Declared in `plugins.yml`, loaded at startup. Built-in commands/platforms always take priority. See `ARCH.md` for full spec.

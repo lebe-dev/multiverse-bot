@@ -12,6 +12,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/config"
+	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/cookies"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/detector"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/cobalt"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/composite"
@@ -23,6 +24,7 @@ import (
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/plugin"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/store/sqlite"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/telegram"
+	instagramwatcher "gitlab.com/tiny-services/multiverse-bot/internal/adapter/watcher/instagram"
 	youtubewatcher "gitlab.com/tiny-services/multiverse-bot/internal/adapter/watcher/youtube"
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 	"gitlab.com/tiny-services/multiverse-bot/internal/usecase"
@@ -56,9 +58,28 @@ func main() {
 		}
 	}
 
+	// ── Database ──────────────────────────────────────────────────────────────
+	store, err := sqlite.New(cfg.SQLitePath)
+	if err != nil {
+		log.Error("failed to open sqlite", "error", err)
+		os.Exit(1)
+	}
+	defer func() { _ = store.Close() }()
+
+	// ── Cookie Manager ────────────────────────────────────────────────────────
+	cookieMgr := cookies.NewManager(store)
+	if err := cookieMgr.Materialize(context.Background()); err != nil {
+		log.Error("failed to materialize cookies", "error", err)
+		os.Exit(1)
+	}
+	defer cookieMgr.Cleanup()
+
+	ytCookiePath := func() string { return cookieMgr.CookieFilePath("youtube") }
+	igCookiePath := func() string { return cookieMgr.CookieFilePath("instagram") }
+
 	// ── Downloaders ───────────────────────────────────────────────────────────
 	det := detector.New()
-	ytdlpDownloader := ytdlpdl.New(cfg.YtdlpPath, cfg.CookiesFile, log)
+	ytdlpDownloader := ytdlpdl.New(cfg.YtdlpPath, ytCookiePath, log)
 	cobaltDownloader := cobalt.New(cfg.CobaltAPIURL, log)
 
 	var threadsDownloader domain.Downloader
@@ -97,15 +118,8 @@ func main() {
 	}
 
 	// ── Watcher ───────────────────────────────────────────────────────────────
-	store, err := sqlite.New(cfg.SQLitePath)
-	if err != nil {
-		log.Error("failed to open sqlite", "error", err)
-		os.Exit(1)
-	}
-	defer func() { _ = store.Close() }()
-
 	feedFetcher := youtubewatcher.NewFeedFetcher()
-	channelResolver := youtubewatcher.NewResolver(cfg.YtdlpPath, cfg.CookiesFile)
+	channelResolver := youtubewatcher.NewResolver(cfg.YtdlpPath, ytCookiePath)
 	notifier := bot.NewNotifier(log)
 
 	watchSvc := usecase.NewWatchService(
@@ -114,7 +128,7 @@ func main() {
 	)
 
 	// ── Bot configuration ─────────────────────────────────────────────────────
-	bot.SetConfig(Version, cfg.TGLimit, cfg.CookiesFile, cfg.Debug)
+	bot.SetConfig(Version, cfg.TGLimit, cookieMgr, cfg.Debug)
 	bot.SetQualityDownloader(ytdlpDownloader)
 	bot.SetAdminUsers(cfg.AdminUsers)
 	bot.SetAdminChatStore(telegram.NewAdminChatStore(cfg.AdminChatsFile, log))
@@ -147,8 +161,19 @@ func main() {
 		}
 	}
 
+	// ── Instagram Story Watcher ─────────────────────────────────────────────
+	igFetcher := instagramwatcher.NewFetcher(cfg.YtdlpPath, igCookiePath, log)
+	igResolver := instagramwatcher.NewResolver(cfg.YtdlpPath, igCookiePath)
+	storyNotifier := bot.NewStoryNotifier(log)
+
+	storyWatchSvc := usecase.NewStoryWatchService(
+		store, igFetcher, igResolver, storyNotifier, log,
+		cfg.WatchInstagramPollInterval, cfg.WatchMaxSubs, cfg.WatchMaxChannelsTotal,
+	)
+
 	bot.RegisterHandlers(cfg.AllowedUsers)
 	bot.RegisterWatchHandlers(watchSvc)
+	bot.RegisterStoryWatchHandlers(storyWatchSvc)
 
 	// ── Run ───────────────────────────────────────────────────────────────────
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -156,6 +181,7 @@ func main() {
 
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error { return watchSvc.Run(gCtx) })
+	g.Go(func() error { return storyWatchSvc.Run(gCtx) })
 
 	go func() {
 		log.Info("bot started")
