@@ -45,10 +45,14 @@ func NewStoryWatchService(
 }
 
 func (s *StoryWatchService) Subscribe(ctx context.Context, userID int64, input string) error {
+	s.log.Debug("resolving instagram username", "user_id", userID, "input", input)
+
 	username, err := s.resolver.Resolve(ctx, input)
 	if err != nil {
+		s.log.Warn("instagram resolve failed", "user_id", userID, "input", input, "error", err)
 		return err
 	}
+	s.log.Debug("instagram username resolved", "user_id", userID, "input", input, "username", username)
 
 	count, err := s.store.CountStorySubscriptions(ctx, userID)
 	if err != nil {
@@ -69,6 +73,7 @@ func (s *StoryWatchService) Subscribe(ctx context.Context, userID int64, input s
 	if err := s.store.AddStorySubscription(ctx, userID, username); err != nil {
 		return err
 	}
+	s.log.Info("story subscription added", "user_id", userID, "username", username, "existing_subs", count)
 
 	// Seed current stories as seen to avoid sending existing stories.
 	stories, err := s.fetcher.FetchStoryIDs(ctx, username)
@@ -81,11 +86,16 @@ func (s *StoryWatchService) Subscribe(ctx context.Context, userID int64, input s
 			s.log.Warn("failed to mark story as seen on subscribe", "story", st.StoryID, "error", err)
 		}
 	}
+	s.log.Debug("seeded existing stories as seen", "username", username, "count", len(stories))
 	return nil
 }
 
 func (s *StoryWatchService) Unsubscribe(ctx context.Context, userID int64, username string) error {
-	return s.store.RemoveStorySubscription(ctx, userID, username)
+	if err := s.store.RemoveStorySubscription(ctx, userID, username); err != nil {
+		return err
+	}
+	s.log.Info("story subscription removed", "user_id", userID, "username", username)
+	return nil
 }
 
 func (s *StoryWatchService) ListSubscriptions(ctx context.Context, userID int64) ([]domain.StorySubscription, error) {
@@ -123,17 +133,22 @@ func (s *StoryWatchService) pollUsername(ctx context.Context, username string) {
 	fetchCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
+	s.log.Debug("fetching stories", "username", username)
+
 	stories, err := s.fetcher.FetchStoryIDs(fetchCtx, username)
 	if err != nil {
 		s.log.Error("failed to fetch stories", "username", username, "error", err)
 		return
 	}
 
+	s.log.Debug("stories fetched", "username", username, "count", len(stories))
+
 	subscribers, err := s.store.GetStorySubscribers(ctx, username)
 	if err != nil {
 		s.log.Error("failed to get story subscribers", "username", username, "error", err)
 		return
 	}
+	s.log.Debug("story subscribers", "username", username, "count", len(subscribers))
 
 	for _, story := range stories {
 		if ctx.Err() != nil {
@@ -154,8 +169,11 @@ func (s *StoryWatchService) pollUsername(ctx context.Context, username string) {
 		}
 
 		if len(unseenUsers) == 0 {
+			s.log.Debug("story already seen by all subscribers", "username", username, "story_id", story.StoryID, "subscribers", len(subscribers))
 			continue
 		}
+
+		s.log.Info("new story detected", "username", username, "story_id", story.StoryID, "unseen_users", len(unseenUsers))
 
 		// Download once for all subscribers.
 		dlCtx, dlCancel := context.WithTimeout(ctx, 2*time.Minute)
@@ -165,13 +183,15 @@ func (s *StoryWatchService) pollUsername(ctx context.Context, username string) {
 			s.log.Error("failed to download story", "username", username, "story", story.StoryID, "error", err)
 			continue
 		}
+		s.log.Debug("story downloaded", "username", username, "story_id", story.StoryID, "type", media.Type, "size", media.Size)
 
 		// Notify all unseen users, then mark as seen.
 		for _, userID := range unseenUsers {
 			if err := s.notifier.NotifyNewStory(ctx, userID, *media); err != nil {
-				s.log.Error("failed to notify user about story", "user", userID, "story", story.StoryID, "error", err)
+				s.log.Error("failed to notify user about story", "user_id", userID, "story_id", story.StoryID, "error", err)
 				continue
 			}
+			s.log.Debug("story notification sent", "user_id", userID, "username", username, "story_id", story.StoryID)
 			if err := s.store.MarkStorySeen(ctx, userID, username, story.StoryID); err != nil {
 				s.log.Error("failed to mark story seen", "story", story.StoryID, "error", err)
 			}

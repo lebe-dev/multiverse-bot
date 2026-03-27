@@ -36,17 +36,28 @@ type entryJSON struct {
 
 func (f *Fetcher) FetchStoryIDs(ctx context.Context, username string) ([]domain.StoryItem, error) {
 	args := []string{"--flat-playlist", "-J", "--no-warnings"}
+	hasCookies := false
 	if cp := f.cookiePath(); cp != "" {
 		args = append(args, "--cookies", cp)
+		hasCookies = true
 	}
-	args = append(args, "https://www.instagram.com/stories/"+username+"/")
+	url := "https://www.instagram.com/stories/" + username + "/"
+	args = append(args, url)
+
+	f.log.Debug("yt-dlp fetch story IDs", "username", username, "has_cookies", hasCookies)
 
 	out, err := exec.CommandContext(ctx, f.ytdlpPath, args...).Output()
 	if err != nil {
+		f.log.Debug("yt-dlp fetch story IDs failed", "username", username, "error", err)
 		return nil, fmt.Errorf("yt-dlp fetch stories for @%s: %w", username, err)
 	}
 
-	return parsePlaylistJSON(out, username)
+	items, err := parsePlaylistJSON(out, username)
+	if err != nil {
+		return nil, err
+	}
+	f.log.Debug("yt-dlp fetch story IDs done", "username", username, "count", len(items))
+	return items, nil
 }
 
 func parsePlaylistJSON(data []byte, username string) ([]domain.StoryItem, error) {
@@ -87,15 +98,19 @@ func (f *Fetcher) DownloadStory(ctx context.Context, username string, storyID st
 		"--no-warnings",
 		"-o", outTmpl,
 	}
+	hasCookies := false
 	if cp := f.cookiePath(); cp != "" {
 		args = append(args, "--cookies", cp)
+		hasCookies = true
 	}
 	args = append(args, "--js-runtimes", "node")
 	args = append(args, storyURL)
 
+	f.log.Debug("yt-dlp download story", "username", username, "story_id", storyID, "has_cookies", hasCookies)
+
 	if out, err := exec.CommandContext(ctx, f.ytdlpPath, args...).CombinedOutput(); err != nil {
 		_ = os.RemoveAll(tmpDir)
-		f.log.Debug("yt-dlp download story failed", "story", storyID, "output", string(out))
+		f.log.Debug("yt-dlp download story failed", "username", username, "story_id", storyID, "output", string(out))
 		return nil, fmt.Errorf("yt-dlp download story %s: %w", storyID, err)
 	}
 

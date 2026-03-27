@@ -73,7 +73,7 @@ func (b *Bot) handleStorySubscribe(c tele.Context, input string) error {
 		"user_id", c.Sender().ID,
 		"input", input,
 	)
-	return c.Send("✅ Подписка на сторис оформлена! Вы будете получать новые сторис этого аккаунта.")
+	return c.Send("✅ Подписка на сторис оформлена! Вы будете получать новые сторис этого аккаунта.\n\n⚠️ Сторис, которые уже были опубликованы на момент подписки, не отправляются — только те, что появятся после.")
 }
 
 func storyWatchListMessage(subs []domain.StorySubscription) (string, *tele.ReplyMarkup) {

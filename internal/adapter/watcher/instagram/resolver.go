@@ -3,7 +3,7 @@ package instagram
 import (
 	"context"
 	"fmt"
-	"os/exec"
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -21,16 +21,18 @@ var reservedPaths = map[string]struct{}{
 }
 
 type Resolver struct {
-	ytdlpPath  string
-	cookiePath func() string
+	log *slog.Logger
 }
 
-func NewResolver(ytdlpPath string, cookiePath func() string) *Resolver {
-	return &Resolver{ytdlpPath: ytdlpPath, cookiePath: cookiePath}
+func NewResolver(_ string, _ func() string, log *slog.Logger) *Resolver {
+	return &Resolver{log: log}
 }
 
-func (r *Resolver) Resolve(ctx context.Context, input string) (string, error) {
+func (r *Resolver) Resolve(_ context.Context, input string) (string, error) {
 	input = strings.TrimSpace(input)
+	if i := strings.IndexByte(input, '?'); i != -1 {
+		input = input[:i]
+	}
 
 	username := extractUsername(input)
 	if username == "" {
@@ -41,10 +43,7 @@ func (r *Resolver) Resolve(ctx context.Context, input string) (string, error) {
 		return "", fmt.Errorf("%w: %q is a reserved path", domain.ErrUsernameNotFound, username)
 	}
 
-	if err := r.validate(ctx, username); err != nil {
-		return "", err
-	}
-
+	r.log.Debug("instagram username extracted", "input", input, "username", username)
 	return username, nil
 }
 
@@ -56,17 +55,4 @@ func extractUsername(input string) string {
 		return m[1]
 	}
 	return ""
-}
-
-func (r *Resolver) validate(ctx context.Context, username string) error {
-	args := []string{"--flat-playlist", "-J", "--no-warnings"}
-	if cp := r.cookiePath(); cp != "" {
-		args = append(args, "--cookies", cp)
-	}
-	args = append(args, "https://www.instagram.com/stories/"+username+"/")
-
-	if err := exec.CommandContext(ctx, r.ytdlpPath, args...).Run(); err != nil {
-		return fmt.Errorf("%w: yt-dlp validation failed for @%s", domain.ErrUsernameNotFound, username)
-	}
-	return nil
 }

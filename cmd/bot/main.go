@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"golang.org/x/sync/errgroup"
@@ -74,12 +75,18 @@ func main() {
 	}
 	defer cookieMgr.Cleanup()
 
-	ytCookiePath := func() string { return cookieMgr.CookieFilePath("youtube") }
 	igCookiePath := func() string { return cookieMgr.CookieFilePath("instagram") }
+	ytCookiePath := func() string { return cookieMgr.CookieFilePath("youtube") }
+	ytdlpCookiePath := func(url string) string {
+		if strings.Contains(url, "instagram.com") {
+			return cookieMgr.CookieFilePath("instagram")
+		}
+		return cookieMgr.CookieFilePath("youtube")
+	}
 
 	// ── Downloaders ───────────────────────────────────────────────────────────
 	det := detector.New()
-	ytdlpDownloader := ytdlpdl.New(cfg.YtdlpPath, ytCookiePath, log)
+	ytdlpDownloader := ytdlpdl.New(cfg.YtdlpPath, ytdlpCookiePath, log)
 	cobaltDownloader := cobalt.New(cfg.CobaltAPIURL, log)
 
 	var threadsDownloader domain.Downloader
@@ -163,7 +170,7 @@ func main() {
 
 	// ── Instagram Story Watcher ─────────────────────────────────────────────
 	igFetcher := instagramwatcher.NewFetcher(cfg.YtdlpPath, igCookiePath, log)
-	igResolver := instagramwatcher.NewResolver(cfg.YtdlpPath, igCookiePath)
+	igResolver := instagramwatcher.NewResolver(cfg.YtdlpPath, igCookiePath, log)
 	storyNotifier := bot.NewStoryNotifier(log)
 
 	storyWatchSvc := usecase.NewStoryWatchService(
