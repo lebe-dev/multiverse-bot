@@ -85,6 +85,24 @@ func migrate(db *sql.DB) error {
 			PRIMARY KEY (user_id, username, story_id)
 		);
 
+		CREATE TABLE IF NOT EXISTS post_subscriptions (
+			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id    INTEGER NOT NULL,
+			username   TEXT NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(user_id, username)
+		);
+		CREATE INDEX IF NOT EXISTS idx_post_sub_user ON post_subscriptions(user_id);
+		CREATE INDEX IF NOT EXISTS idx_post_sub_username ON post_subscriptions(username);
+
+		CREATE TABLE IF NOT EXISTS seen_posts (
+			user_id  INTEGER NOT NULL,
+			username TEXT NOT NULL,
+			post_id  TEXT NOT NULL,
+			seen_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (user_id, username, post_id)
+		);
+
 		CREATE TABLE IF NOT EXISTS cookies (
 			platform   TEXT PRIMARY KEY,
 			data       BLOB NOT NULL,
@@ -399,6 +417,163 @@ func (s *Store) MarkStorySeen(ctx context.Context, userID int64, username, story
 func (s *Store) CleanupExpiredSeenStories(ctx context.Context) (int64, error) {
 	result, err := s.db.ExecContext(ctx,
 		`DELETE FROM seen_stories WHERE seen_at < datetime('now', '-3 days')`,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// ── Post subscription methods ─────────────────────────────────────────────────
+
+func (s *Store) AddPostSubscription(ctx context.Context, userID int64, username string) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO post_subscriptions (user_id, username) VALUES (?, ?)`,
+		userID, username,
+	)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			return domain.ErrAlreadySubscribedPost
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *Store) RemovePostSubscription(ctx context.Context, userID int64, username string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	result, err := tx.ExecContext(ctx,
+		`DELETE FROM post_subscriptions WHERE user_id = ? AND username = ?`,
+		userID, username,
+	)
+	if err != nil {
+		return err
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return domain.ErrNotSubscribedPost
+	}
+
+	var count int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM post_subscriptions WHERE username = ?`,
+		username,
+	).Scan(&count); err != nil {
+		return err
+	}
+
+	if count == 0 {
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM seen_posts WHERE username = ?`,
+			username,
+		); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (s *Store) GetPostSubscriptions(ctx context.Context, userID int64) ([]domain.PostSubscription, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, user_id, username, created_at FROM post_subscriptions WHERE user_id = ? ORDER BY created_at`,
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var subs []domain.PostSubscription
+	for rows.Next() {
+		var sub domain.PostSubscription
+		var createdAt string
+		if err := rows.Scan(&sub.ID, &sub.UserID, &sub.Username, &createdAt); err != nil {
+			return nil, err
+		}
+		sub.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+		subs = append(subs, sub)
+	}
+	return subs, rows.Err()
+}
+
+func (s *Store) CountPostSubscriptions(ctx context.Context, userID int64) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM post_subscriptions WHERE user_id = ?`,
+		userID,
+	).Scan(&count)
+	return count, err
+}
+
+func (s *Store) GetAllUniquePostUsernames(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT username FROM post_subscriptions`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var usernames []string
+	for rows.Next() {
+		var u string
+		if err := rows.Scan(&u); err != nil {
+			return nil, err
+		}
+		usernames = append(usernames, u)
+	}
+	return usernames, rows.Err()
+}
+
+func (s *Store) GetPostSubscribers(ctx context.Context, username string) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT user_id FROM post_subscriptions WHERE username = ?`,
+		username,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var userIDs []int64
+	for rows.Next() {
+		var uid int64
+		if err := rows.Scan(&uid); err != nil {
+			return nil, err
+		}
+		userIDs = append(userIDs, uid)
+	}
+	return userIDs, rows.Err()
+}
+
+func (s *Store) HasSeenPost(ctx context.Context, userID int64, username, postID string) (bool, error) {
+	var exists bool
+	err := s.db.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM seen_posts WHERE user_id = ? AND username = ? AND post_id = ?)`,
+		userID, username, postID,
+	).Scan(&exists)
+	return exists, err
+}
+
+func (s *Store) MarkPostSeen(ctx context.Context, userID int64, username, postID string) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO seen_posts (user_id, username, post_id) VALUES (?, ?, ?)`,
+		userID, username, postID,
+	)
+	return err
+}
+
+func (s *Store) CleanupExpiredSeenPosts(ctx context.Context) (int64, error) {
+	result, err := s.db.ExecContext(ctx,
+		`DELETE FROM seen_posts WHERE seen_at < datetime('now', '-30 days')`,
 	)
 	if err != nil {
 		return 0, err

@@ -20,6 +20,7 @@ type Bot struct {
 	service  *usecase.VideoService
 	watchSvc      *usecase.WatchService
 	storyWatchSvc *usecase.StoryWatchService
+	postWatchSvc  *usecase.PostWatchService
 	log      *slog.Logger
 	adminIDs    map[string]struct{}
 	adminChats  *AdminChatStore

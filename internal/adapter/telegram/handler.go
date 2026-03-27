@@ -104,6 +104,7 @@ func (b *Bot) buildHelpText(c tele.Context) string {
 		"/settings — настройки (качество, подпись)\n" +
 		"/watch_youtube <url> — подписаться на YouTube-канал\n" +
 		"/watch_instagram_stories <url> — подписаться на сторис\n" +
+		"/watch_instagram_posts <url> — подписаться на посты\n" +
 		"/details <url> — доступные форматы и размеры\n" +
 		"/save [url] — сохранить в Google Drive\n" +
 		"/drive — управление Google Drive\n" +
@@ -512,6 +513,10 @@ func (b *Bot) handleCallback(c tele.Context) error {
 		return b.handleUnsubscribeCallback(c, strings.TrimPrefix(data, "watch_rm:"))
 	case strings.HasPrefix(data, "story_rm:"):
 		return b.handleStoryUnsubscribeCallback(c, strings.TrimPrefix(data, "story_rm:"))
+	case strings.HasPrefix(data, "post_rm:"):
+		return b.handlePostUnsubscribeCallback(c, strings.TrimPrefix(data, "post_rm:"))
+	case strings.HasPrefix(data, "igdl:"):
+		return b.handleInstagramPostDownloadCallback(c, strings.TrimPrefix(data, "igdl:"))
 	}
 
 	// Plugin callbacks use "p_<name>|<callback_id>" format.

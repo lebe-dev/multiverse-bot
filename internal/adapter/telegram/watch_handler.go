@@ -54,16 +54,25 @@ func (b *Bot) handleWatchAll(c tele.Context) error {
 		}
 	}
 
-	if len(ytSubs) == 0 && len(storySubs) == 0 {
-		return c.Send("У вас нет активных подписок.\n\nДобавить:\n• /watch_youtube <url>\n• /watch_instagram_stories <url>")
+	var postSubs []domain.PostSubscription
+	if b.postWatchSvc != nil {
+		postSubs, err = b.postWatchSvc.ListSubscriptions(ctx, c.Sender().ID)
+		if err != nil {
+			b.log.Error("failed to list post subscriptions", "error", err)
+			return c.Send("Не удалось получить список подписок.")
+		}
 	}
 
-	text, kb := allWatchListMessage(ytSubs, storySubs)
+	if len(ytSubs) == 0 && len(storySubs) == 0 && len(postSubs) == 0 {
+		return c.Send("У вас нет активных подписок.\n\nДобавить:\n• /watch_youtube <url>\n• /watch_instagram_stories <url>\n• /watch_instagram_posts <url>")
+	}
+
+	text, kb := allWatchListMessage(ytSubs, storySubs, postSubs)
 	return c.Send(text, kb)
 }
 
-func allWatchListMessage(ytSubs []domain.Subscription, storySubs []domain.StorySubscription) (string, *tele.ReplyMarkup) {
-	total := len(ytSubs) + len(storySubs)
+func allWatchListMessage(ytSubs []domain.Subscription, storySubs []domain.StorySubscription, postSubs []domain.PostSubscription) (string, *tele.ReplyMarkup) {
+	total := len(ytSubs) + len(storySubs) + len(postSubs)
 	var rows [][]tele.InlineButton
 	for _, sub := range ytSubs {
 		rows = append(rows, []tele.InlineButton{
@@ -72,7 +81,12 @@ func allWatchListMessage(ytSubs []domain.Subscription, storySubs []domain.StoryS
 	}
 	for _, sub := range storySubs {
 		rows = append(rows, []tele.InlineButton{
-			{Text: "❌ @" + sub.Username + " (Instagram)", Data: "story_rm:" + sub.Username},
+			{Text: "❌ @" + sub.Username + " (IG сторис)", Data: "story_rm:" + sub.Username},
+		})
+	}
+	for _, sub := range postSubs {
+		rows = append(rows, []tele.InlineButton{
+			{Text: "❌ @" + sub.Username + " (IG посты)", Data: "post_rm:" + sub.Username},
 		})
 	}
 	text := fmt.Sprintf("📋 Подписки (%d):\n\nНажмите для отписки.", total)

@@ -19,6 +19,9 @@ var (
 	ErrNotSubscribedStory     = errors.New("not subscribed to stories")
 	ErrUsernameNotFound       = errors.New("instagram username not found")
 
+	ErrAlreadySubscribedPost = errors.New("already subscribed to posts")
+	ErrNotSubscribedPost     = errors.New("not subscribed to posts")
+
 	ErrPluginUnavailable = errors.New("plugin unavailable")
 	ErrPluginTimeout     = errors.New("plugin timed out")
 )

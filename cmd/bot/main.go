@@ -186,9 +186,19 @@ func main() {
 		cfg.WatchInstagramPollInterval, cfg.WatchMaxSubs, cfg.WatchMaxChannelsTotal,
 	)
 
+	// ── Instagram Post Watcher ──────────────────────────────────────────
+	igPostFetcher := instagramwatcher.NewPostFetcher(cfg.YtdlpPath, igCookiePath, log)
+	postNotifier := bot.NewPostNotifier(log)
+
+	postWatchSvc := usecase.NewPostWatchService(
+		store, igPostFetcher, igResolver, postNotifier, log,
+		cfg.WatchInstagramPostsPollInterval, cfg.WatchMaxSubs, cfg.WatchMaxChannelsTotal,
+	)
+
 	bot.RegisterHandlers(cfg.AllowedUsers)
 	bot.RegisterWatchHandlers(watchSvc)
 	bot.RegisterStoryWatchHandlers(storyWatchSvc)
+	bot.RegisterPostWatchHandlers(postWatchSvc)
 
 	// ── Run ───────────────────────────────────────────────────────────────────
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -197,6 +207,7 @@ func main() {
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error { return watchSvc.Run(gCtx) })
 	g.Go(func() error { return storyWatchSvc.Run(gCtx) })
+	g.Go(func() error { return postWatchSvc.Run(gCtx) })
 
 	go func() {
 		log.Info("bot started")
