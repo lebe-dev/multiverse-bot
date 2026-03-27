@@ -31,7 +31,7 @@ import (
 	"gitlab.com/tiny-services/multiverse-bot/internal/usecase"
 )
 
-const Version = "0.9.0"
+const Version = "0.10.0"
 
 func main() {
 	cfg, err := config.Load()
@@ -124,17 +124,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ── Watcher ───────────────────────────────────────────────────────────────
-	feedFetcher := youtubewatcher.NewFeedFetcher()
-	channelResolver := youtubewatcher.NewResolver(cfg.YtdlpPath, ytCookiePath)
-	notifier := bot.NewNotifier(log)
-
-	watchSvc := usecase.NewWatchService(
-		store, feedFetcher, channelResolver, notifier, log,
-		cfg.WatchPollInterval, cfg.WatchMaxSubs, cfg.WatchMaxChannelsTotal,
-	)
-
 	// ── Bot configuration ─────────────────────────────────────────────────────
+	// Must happen before creating notifiers — they capture tgLimit and localBot.
 	bot.SetConfig(Version, cfg.TGLimit, cookieMgr, cfg.Debug)
 	bot.SetQualityDownloader(ytdlpDownloader)
 	bot.SetAdminUsers(cfg.AdminUsers)
@@ -167,6 +158,23 @@ func main() {
 			log.Info("plugins loaded", "count", len(registry.AllManifests()))
 		}
 	}
+
+	// ── Watcher ───────────────────────────────────────────────────────────────
+	feedFetcher := youtubewatcher.NewFeedFetcher()
+	channelResolver := youtubewatcher.NewResolver(cfg.YtdlpPath, ytCookiePath)
+
+	var notifier domain.Notifier
+	if cfg.WatchAutoDownload {
+		notifier = bot.NewAutoDownloadNotifier(log)
+		log.Info("watch auto-download enabled")
+	} else {
+		notifier = bot.NewNotifier(log)
+	}
+
+	watchSvc := usecase.NewWatchService(
+		store, feedFetcher, channelResolver, notifier, log,
+		cfg.WatchPollInterval, cfg.WatchMaxSubs, cfg.WatchMaxChannelsTotal,
+	)
 
 	// ── Instagram Story Watcher ─────────────────────────────────────────────
 	igFetcher := instagramwatcher.NewFetcher(cfg.YtdlpPath, igCookiePath, log)
