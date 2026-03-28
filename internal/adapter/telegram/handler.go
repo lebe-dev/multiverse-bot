@@ -376,11 +376,13 @@ func (b *Bot) handleMediaURL(c tele.Context, url string, st UserSettings) error 
 
 func (b *Bot) sendVideo(client *tele.Bot, c tele.Context, filePath, caption string) error {
 	_ = c.Notify(tele.UploadingVideo)
-	w, h := probe.VideoDimensions(context.Background(), filePath)
+	w, h, dur := probe.VideoMeta(context.Background(), filePath)
 	video := &tele.Video{
-		File:   tele.FromDisk(filePath),
-		Width:  w,
-		Height: h,
+		File:      tele.FromDisk(filePath),
+		Width:     w,
+		Height:    h,
+		Duration:  dur,
+		Streaming: true,
 	}
 	if caption != "" {
 		video.Caption = caption
