@@ -1,6 +1,8 @@
 package instagram
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
@@ -61,6 +63,41 @@ func TestParsePlaylistJSON(t *testing.T) {
 				if item.Username != "testuser" {
 					t.Errorf("expected username 'testuser', got %q", item.Username)
 				}
+			}
+		})
+	}
+}
+
+func TestFindFileByID(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create files simulating yt-dlp output for multiple stories.
+	files := []string{"AAA.mp4", "BBB.mp4", "CCC.mp4"}
+	for _, name := range files {
+		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte(name), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	entries, err := os.ReadDir(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		storyID  string
+		wantFile string
+	}{
+		{"AAA", "AAA.mp4"},
+		{"BBB", "BBB.mp4"},
+		{"CCC", "CCC.mp4"},
+		{"MISSING", "AAA.mp4"}, // fallback to first entry
+	}
+	for _, tt := range tests {
+		t.Run(tt.storyID, func(t *testing.T) {
+			got := findFileByID(entries, tmpDir, tt.storyID)
+			if filepath.Base(got) != tt.wantFile {
+				t.Errorf("findFileByID(%q) = %q, want %q", tt.storyID, filepath.Base(got), tt.wantFile)
 			}
 		})
 	}

@@ -91,10 +91,10 @@ func (f *Fetcher) DownloadStory(ctx context.Context, username string, storyID st
 	}
 
 	outTmpl := filepath.Join(tmpDir, "%(id)s.%(ext)s")
-	storyURL := fmt.Sprintf("https://www.instagram.com/stories/%s/%s/", username, storyID)
+	storyURL := fmt.Sprintf("https://www.instagram.com/stories/%s/", username)
 
 	args := []string{
-		"--no-playlist",
+		"--match-filter", "id=" + storyID,
 		"--no-warnings",
 		"-o", outTmpl,
 	}
@@ -120,7 +120,7 @@ func (f *Fetcher) DownloadStory(ctx context.Context, username string, storyID st
 		return nil, fmt.Errorf("no files downloaded for story %s", storyID)
 	}
 
-	filePath := filepath.Join(tmpDir, entries[0].Name())
+	filePath := findFileByID(entries, tmpDir, storyID)
 	info, err := os.Stat(filePath)
 	if err != nil {
 		_ = os.RemoveAll(tmpDir)
@@ -136,6 +136,17 @@ func (f *Fetcher) DownloadStory(ctx context.Context, username string, storyID st
 		Type:     mediaType,
 		Size:     info.Size(),
 	}, nil
+}
+
+// findFileByID returns the path to the file whose name starts with storyID.
+// Falls back to the first entry if no match is found.
+func findFileByID(entries []os.DirEntry, dir, storyID string) string {
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), storyID+".") {
+			return filepath.Join(dir, e.Name())
+		}
+	}
+	return filepath.Join(dir, entries[0].Name())
 }
 
 func detectMediaType(filePath string) domain.MediaType {
