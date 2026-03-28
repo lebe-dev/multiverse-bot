@@ -429,7 +429,7 @@ func (b *Bot) sendMedia(client *tele.Bot, c tele.Context, result *domain.MediaRe
 			}
 			album = append(album, photo)
 		case domain.MediaVideo:
-			w, h := probe.VideoDimensions(context.Background(), item.FilePath)
+			w, h, _ := probe.VideoMeta(context.Background(), item.FilePath)
 			video := &tele.Video{
 				File:   tele.FromDisk(item.FilePath),
 				Width:  w,
