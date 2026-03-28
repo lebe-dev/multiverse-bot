@@ -17,7 +17,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/dlutil"
-	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/probe"
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 )
 
@@ -117,16 +116,9 @@ func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, e
 	}
 
 	d.log.Debug("downloading cobalt file")
-	video, err := dlutil.SaveToTemp("multiverse-cobalt-*", url, func(f *os.File) error {
+	return dlutil.SaveToTemp("multiverse-cobalt-*", url, func(f *os.File) error {
 		return downloadToFile(ctx, d.httpClient, cr.URL, f)
 	})
-	if err != nil {
-		return nil, err
-	}
-	if size := probe.ApplyFaststart(ctx, video.FilePath); size > 0 {
-		video.Size = size
-	}
-	return video, nil
 }
 
 func (d *Downloader) DownloadMedia(ctx context.Context, url string) (*domain.MediaResult, error) {
