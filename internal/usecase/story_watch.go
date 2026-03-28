@@ -16,10 +16,16 @@ type StoryWatchService struct {
 	fetcher       domain.StoryFetcher
 	resolver      domain.StoryResolver
 	notifier      domain.StoryNotifier
+	enricher      domain.StoryMetadataEnricher
 	log           *slog.Logger
 	pollInterval  time.Duration
 	maxSubs       int
 	maxUsersTotal int
+}
+
+// SetMetadataEnricher sets an optional enricher that detects reshared stories.
+func (s *StoryWatchService) SetMetadataEnricher(e domain.StoryMetadataEnricher) {
+	s.enricher = e
 }
 
 func NewStoryWatchService(
@@ -184,6 +190,18 @@ func (s *StoryWatchService) pollUsername(ctx context.Context, username string) {
 			continue
 		}
 		s.log.Debug("story downloaded", "username", username, "story_id", story.StoryID, "type", media.Type, "size", media.Size)
+
+		if s.enricher != nil {
+			enrichCtx, enrichCancel := context.WithTimeout(ctx, 15*time.Second)
+			reshare, err := s.enricher.EnrichStoryMetadata(enrichCtx, username, story.StoryID)
+			enrichCancel()
+			if err != nil {
+				s.log.Warn("failed to enrich story metadata", "username", username, "story_id", story.StoryID, "error", err)
+			} else if reshare != nil {
+				media.Reshare = reshare
+				s.log.Info("story is a reshare", "username", username, "story_id", story.StoryID, "original_author", reshare.Username)
+			}
+		}
 
 		// Notify all unseen users, then mark as seen.
 		for _, userID := range unseenUsers {

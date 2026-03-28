@@ -29,6 +29,13 @@ func (b *Bot) NewStoryNotifier(log *slog.Logger) domain.StoryNotifier {
 
 func (n *storyNotifier) NotifyNewStory(_ context.Context, userID int64, story domain.StoryMedia) error {
 	caption := fmt.Sprintf("📷 Story @%s", story.Username)
+	if story.Reshare != nil {
+		link := "https://instagram.com/" + story.Reshare.Username
+		if story.Reshare.StoryID != "" {
+			link = fmt.Sprintf("https://instagram.com/stories/%s/%s/", story.Reshare.Username, story.Reshare.StoryID)
+		}
+		caption += fmt.Sprintf("\n\n↩️ @%s\n%s", story.Reshare.Username, link)
+	}
 	recipient := tele.ChatID(userID)
 
 	client := n.bot

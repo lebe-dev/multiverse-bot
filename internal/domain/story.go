@@ -20,6 +20,12 @@ type StoryItem struct {
 	Timestamp time.Time
 }
 
+// StoryReshare holds information about the original story when a story is a reshare/quote.
+type StoryReshare struct {
+	Username string // original story author's Instagram username
+	StoryID  string // original story ID (may be empty if unavailable)
+}
+
 // StoryMedia represents a downloaded story media file ready for sending.
 type StoryMedia struct {
 	StoryID  string
@@ -27,6 +33,7 @@ type StoryMedia struct {
 	FilePath string
 	Type     MediaType
 	Size     int64
+	Reshare  *StoryReshare // nil if not a reshare
 }
 
 // StorySubscriptionStore persists Instagram story subscriptions and seen state.
@@ -51,6 +58,13 @@ type StoryFetcher interface {
 // StoryResolver validates and normalizes an Instagram profile URL or username.
 type StoryResolver interface {
 	Resolve(ctx context.Context, input string) (username string, err error)
+}
+
+// StoryMetadataEnricher enriches a story with additional metadata (e.g. reshare info).
+// Implementations must tolerate failures — the caller delivers the story without
+// enrichment when this returns an error.
+type StoryMetadataEnricher interface {
+	EnrichStoryMetadata(ctx context.Context, username string, storyID string) (*StoryReshare, error)
 }
 
 // StoryNotifier sends a downloaded story to a Telegram user.

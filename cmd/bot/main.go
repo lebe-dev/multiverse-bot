@@ -185,6 +185,8 @@ func main() {
 		store, igFetcher, igResolver, storyNotifier, log,
 		cfg.WatchInstagramPollInterval, cfg.WatchMaxSubs, cfg.WatchMaxChannelsTotal,
 	)
+	igAPIClient := instagramwatcher.NewAPIClient(igCookiePath, log)
+	storyWatchSvc.SetMetadataEnricher(igAPIClient)
 
 	// ── Instagram Post Watcher ──────────────────────────────────────────
 	igPostFetcher := instagramwatcher.NewPostFetcher(cfg.YtdlpPath, igCookiePath, log)
