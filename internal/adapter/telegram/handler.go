@@ -519,6 +519,12 @@ func (b *Bot) handleCallback(c tele.Context) error {
 		return b.handlePostUnsubscribeCallback(c, strings.TrimPrefix(data, "post_rm:"))
 	case strings.HasPrefix(data, "igdl:"):
 		return b.handleInstagramPostDownloadCallback(c, strings.TrimPrefix(data, "igdl:"))
+	case strings.HasPrefix(data, "igs:"):
+		parts := strings.SplitN(strings.TrimPrefix(data, "igs:"), ":", 2)
+		if len(parts) == 2 {
+			return b.handleStoryDownloadCallback(c, parts[0], parts[1])
+		}
+		return c.Respond()
 	}
 
 	// Plugin callbacks use "p_<name>|<callback_id>" format.

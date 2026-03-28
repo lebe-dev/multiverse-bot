@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"log/slog"
+	"math/rand/v2"
 	"slices"
 	"time"
 
@@ -16,9 +17,14 @@ type PostWatchService struct {
 	notifier      domain.PostNotifier
 	log           *slog.Logger
 	pollInterval  time.Duration
+	pollJitter    time.Duration // max inter-username delay; 0 disables
 	maxSubs       int
 	maxUsersTotal int
 }
+
+// SetPollJitter overrides the maximum inter-username delay (default 180s).
+// Set to 0 to disable delays (useful in tests).
+func (s *PostWatchService) SetPollJitter(d time.Duration) { s.pollJitter = d }
 
 func NewPostWatchService(
 	store domain.PostSubscriptionStore,
@@ -37,6 +43,7 @@ func NewPostWatchService(
 		notifier:      notifier,
 		log:           log,
 		pollInterval:  pollInterval,
+		pollJitter:    defaultPollJitter,
 		maxSubs:       maxSubs,
 		maxUsersTotal: maxUsersTotal,
 	}
@@ -110,9 +117,19 @@ func (s *PostWatchService) Poll(ctx context.Context) {
 		return
 	}
 
-	for _, username := range usernames {
+	for i, username := range usernames {
 		if ctx.Err() != nil {
 			return
+		}
+		if i > 0 && s.pollJitter > 0 {
+			minDelay := s.pollJitter / 3
+			delay := minDelay + time.Duration(rand.Int64N(int64(s.pollJitter-minDelay)))
+			s.log.Debug("sleeping between post usernames", "delay", delay)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(delay):
+			}
 		}
 		s.pollUsername(ctx, username)
 	}

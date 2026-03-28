@@ -127,17 +127,19 @@ func (m *mockStoryFetcher) DownloadStory(_ context.Context, _ string, storyID st
 }
 
 type mockStoryNotifier struct {
-	notified []domain.StoryMedia
+	notified []domain.StoryItem
 	err      error
 }
 
-func (m *mockStoryNotifier) NotifyNewStory(_ context.Context, _ int64, story domain.StoryMedia) error {
+func (m *mockStoryNotifier) NotifyNewStory(_ context.Context, _ int64, story domain.StoryItem) error {
 	m.notified = append(m.notified, story)
 	return m.err
 }
 
 func newStoryWatchSvc(store *mockStoryStore, fetcher domain.StoryFetcher, resolver *mockStoryResolver, notifier *mockStoryNotifier) *usecase.StoryWatchService {
-	return usecase.NewStoryWatchService(store, fetcher, resolver, notifier, newLogger(), time.Minute, 20, 100)
+	svc := usecase.NewStoryWatchService(store, fetcher, resolver, notifier, newLogger(), time.Minute, 20, 100)
+	svc.SetPollJitter(0) // disable delays in tests
+	return svc
 }
 
 // --- tests ---
@@ -226,13 +228,12 @@ func TestStoryUnsubscribe_NotSubscribed(t *testing.T) {
 	}
 }
 
-func TestStoryPoll_NewStory_Downloaded_And_Notified(t *testing.T) {
+func TestStoryPoll_NewStory_Notified(t *testing.T) {
 	store := newMockStoryStore()
 	_ = store.AddStorySubscription(context.Background(), 1, "natgeo")
 
 	fetcher := &mockStoryFetcher{
-		stories:       []domain.StoryItem{{StoryID: "new1", Username: "natgeo"}},
-		downloadMedia: &domain.StoryMedia{Username: "natgeo", FilePath: "/tmp/fake.mp4", Type: domain.MediaVideo, Size: 100},
+		stories: []domain.StoryItem{{StoryID: "new1", Username: "natgeo"}},
 	}
 	notifier := &mockStoryNotifier{}
 
@@ -242,8 +243,12 @@ func TestStoryPoll_NewStory_Downloaded_And_Notified(t *testing.T) {
 	if len(notifier.notified) != 1 {
 		t.Errorf("expected 1 notification, got %d", len(notifier.notified))
 	}
-	if len(fetcher.downloaded) != 1 {
-		t.Errorf("expected 1 download, got %d", len(fetcher.downloaded))
+	if notifier.notified[0].StoryID != "new1" {
+		t.Errorf("expected story ID new1, got %s", notifier.notified[0].StoryID)
+	}
+	// No downloads during polling — download happens on-demand via callback.
+	if len(fetcher.downloaded) != 0 {
+		t.Errorf("expected 0 downloads during poll, got %d", len(fetcher.downloaded))
 	}
 
 	seen, _ := store.HasSeenStory(context.Background(), 1, "natgeo", "new1")
@@ -252,14 +257,13 @@ func TestStoryPoll_NewStory_Downloaded_And_Notified(t *testing.T) {
 	}
 }
 
-func TestStoryPoll_AlreadySeen_NotDownloaded(t *testing.T) {
+func TestStoryPoll_AlreadySeen_NotNotified(t *testing.T) {
 	store := newMockStoryStore()
 	_ = store.AddStorySubscription(context.Background(), 1, "natgeo")
 	_ = store.MarkStorySeen(context.Background(), 1, "natgeo", "old1")
 
 	fetcher := &mockStoryFetcher{
-		stories:       []domain.StoryItem{{StoryID: "old1", Username: "natgeo"}},
-		downloadMedia: &domain.StoryMedia{},
+		stories: []domain.StoryItem{{StoryID: "old1", Username: "natgeo"}},
 	}
 	notifier := &mockStoryNotifier{}
 
@@ -269,29 +273,26 @@ func TestStoryPoll_AlreadySeen_NotDownloaded(t *testing.T) {
 	if len(notifier.notified) != 0 {
 		t.Errorf("expected 0 notifications, got %d", len(notifier.notified))
 	}
-	if len(fetcher.downloaded) != 0 {
-		t.Errorf("expected 0 downloads, got %d", len(fetcher.downloaded))
-	}
 }
 
-func TestStoryPoll_MultipleSubscribers_DownloadOnce(t *testing.T) {
+func TestStoryPoll_MultipleSubscribers_NotifiedSeparately(t *testing.T) {
 	store := newMockStoryStore()
 	_ = store.AddStorySubscription(context.Background(), 1, "natgeo")
 	_ = store.AddStorySubscription(context.Background(), 2, "natgeo")
 
 	fetcher := &mockStoryFetcher{
-		stories:       []domain.StoryItem{{StoryID: "s1", Username: "natgeo"}},
-		downloadMedia: &domain.StoryMedia{Username: "natgeo", FilePath: "/tmp/fake.mp4", Type: domain.MediaVideo, Size: 100},
+		stories: []domain.StoryItem{{StoryID: "s1", Username: "natgeo"}},
 	}
 	notifier := &mockStoryNotifier{}
 
 	svc := newStoryWatchSvc(store, fetcher, &mockStoryResolver{}, notifier)
 	svc.Poll(context.Background())
 
-	if len(fetcher.downloaded) != 1 {
-		t.Errorf("expected 1 download (download once), got %d", len(fetcher.downloaded))
-	}
 	if len(notifier.notified) != 2 {
 		t.Errorf("expected 2 notifications (one per subscriber), got %d", len(notifier.notified))
+	}
+	// No downloads during polling.
+	if len(fetcher.downloaded) != 0 {
+		t.Errorf("expected 0 downloads during poll, got %d", len(fetcher.downloaded))
 	}
 }

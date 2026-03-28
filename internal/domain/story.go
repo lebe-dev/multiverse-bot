@@ -67,7 +67,7 @@ type StoryMetadataEnricher interface {
 	EnrichStoryMetadata(ctx context.Context, username string, storyID string) (*StoryReshare, error)
 }
 
-// StoryNotifier sends a downloaded story to a Telegram user.
+// StoryNotifier sends a notification about a new Instagram story to a Telegram user.
 type StoryNotifier interface {
-	NotifyNewStory(ctx context.Context, userID int64, story StoryMedia) error
+	NotifyNewStory(ctx context.Context, userID int64, story StoryItem) error
 }

@@ -115,7 +115,9 @@ func (m *mockPostNotifier) NotifyNewPost(_ context.Context, _ int64, post domain
 }
 
 func newPostWatchSvc(store *mockPostStore, fetcher domain.PostFetcher, resolver *mockStoryResolver, notifier *mockPostNotifier) *usecase.PostWatchService {
-	return usecase.NewPostWatchService(store, fetcher, resolver, notifier, newLogger(), time.Minute, 20, 100)
+	svc := usecase.NewPostWatchService(store, fetcher, resolver, notifier, newLogger(), time.Minute, 20, 100)
+	svc.SetPollJitter(0) // disable delays in tests
+	return svc
 }
 
 // --- tests ---

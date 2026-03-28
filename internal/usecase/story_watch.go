@@ -3,13 +3,16 @@ package usecase
 import (
 	"context"
 	"log/slog"
-	"os"
-	"path/filepath"
+	"math/rand/v2"
 	"slices"
 	"time"
 
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 )
+
+// defaultPollJitter is the default maximum random delay between processing
+// Instagram usernames during a poll cycle (range: jitter/3 .. jitter).
+const defaultPollJitter = 180 * time.Second
 
 type StoryWatchService struct {
 	store         domain.StorySubscriptionStore
@@ -19,6 +22,7 @@ type StoryWatchService struct {
 	enricher      domain.StoryMetadataEnricher
 	log           *slog.Logger
 	pollInterval  time.Duration
+	pollJitter    time.Duration // max inter-username delay; 0 disables
 	maxSubs       int
 	maxUsersTotal int
 }
@@ -27,6 +31,16 @@ type StoryWatchService struct {
 func (s *StoryWatchService) SetMetadataEnricher(e domain.StoryMetadataEnricher) {
 	s.enricher = e
 }
+
+// SetPollJitter overrides the maximum inter-username delay (default 180s).
+// Set to 0 to disable delays (useful in tests).
+func (s *StoryWatchService) SetPollJitter(d time.Duration) { s.pollJitter = d }
+
+// Fetcher returns the story fetcher for on-demand downloads (e.g. callback handlers).
+func (s *StoryWatchService) Fetcher() domain.StoryFetcher { return s.fetcher }
+
+// Enricher returns the optional metadata enricher (may be nil).
+func (s *StoryWatchService) Enricher() domain.StoryMetadataEnricher { return s.enricher }
 
 func NewStoryWatchService(
 	store domain.StorySubscriptionStore,
@@ -45,6 +59,7 @@ func NewStoryWatchService(
 		notifier:      notifier,
 		log:           log,
 		pollInterval:  pollInterval,
+		pollJitter:    defaultPollJitter,
 		maxSubs:       maxSubs,
 		maxUsersTotal: maxUsersTotal,
 	}
@@ -118,9 +133,19 @@ func (s *StoryWatchService) Poll(ctx context.Context) {
 		return
 	}
 
-	for _, username := range usernames {
+	for i, username := range usernames {
 		if ctx.Err() != nil {
 			return
+		}
+		if i > 0 && s.pollJitter > 0 {
+			minDelay := s.pollJitter / 3
+			delay := minDelay + time.Duration(rand.Int64N(int64(s.pollJitter-minDelay)))
+			s.log.Debug("sleeping between story usernames", "delay", delay)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(delay):
+			}
 		}
 		s.pollUsername(ctx, username)
 	}
@@ -161,51 +186,18 @@ func (s *StoryWatchService) pollUsername(ctx context.Context, username string) {
 			return
 		}
 
-		// Find subscribers who haven't seen this story.
-		var unseenUsers []int64
 		for _, userID := range subscribers {
 			seen, err := s.store.HasSeenStory(ctx, userID, username, story.StoryID)
 			if err != nil {
 				s.log.Error("failed to check seen story", "story", story.StoryID, "error", err)
 				continue
 			}
-			if !seen {
-				unseenUsers = append(unseenUsers, userID)
+			if seen {
+				continue
 			}
-		}
 
-		if len(unseenUsers) == 0 {
-			s.log.Debug("story already seen by all subscribers", "username", username, "story_id", story.StoryID, "subscribers", len(subscribers))
-			continue
-		}
-
-		s.log.Info("new story detected", "username", username, "story_id", story.StoryID, "unseen_users", len(unseenUsers))
-
-		// Download once for all subscribers.
-		dlCtx, dlCancel := context.WithTimeout(ctx, 2*time.Minute)
-		media, err := s.fetcher.DownloadStory(dlCtx, username, story.StoryID)
-		dlCancel()
-		if err != nil {
-			s.log.Error("failed to download story", "username", username, "story", story.StoryID, "error", err)
-			continue
-		}
-		s.log.Debug("story downloaded", "username", username, "story_id", story.StoryID, "type", media.Type, "size", media.Size)
-
-		if s.enricher != nil {
-			enrichCtx, enrichCancel := context.WithTimeout(ctx, 15*time.Second)
-			reshare, err := s.enricher.EnrichStoryMetadata(enrichCtx, username, story.StoryID)
-			enrichCancel()
-			if err != nil {
-				s.log.Warn("failed to enrich story metadata", "username", username, "story_id", story.StoryID, "error", err)
-			} else if reshare != nil {
-				media.Reshare = reshare
-				s.log.Info("story is a reshare", "username", username, "story_id", story.StoryID, "original_author", reshare.Username)
-			}
-		}
-
-		// Notify all unseen users, then mark as seen.
-		for _, userID := range unseenUsers {
-			if err := s.notifier.NotifyNewStory(ctx, userID, *media); err != nil {
+			// Notify first, then mark seen — prefer duplicate notifications over missed ones.
+			if err := s.notifier.NotifyNewStory(ctx, userID, story); err != nil {
 				s.log.Error("failed to notify user about story", "user_id", userID, "story_id", story.StoryID, "error", err)
 				continue
 			}
@@ -213,11 +205,6 @@ func (s *StoryWatchService) pollUsername(ctx context.Context, username string) {
 			if err := s.store.MarkStorySeen(ctx, userID, username, story.StoryID); err != nil {
 				s.log.Error("failed to mark story seen", "story", story.StoryID, "error", err)
 			}
-		}
-
-		// Cleanup downloaded file.
-		if media.FilePath != "" {
-			_ = os.RemoveAll(filepath.Dir(media.FilePath))
 		}
 	}
 }
