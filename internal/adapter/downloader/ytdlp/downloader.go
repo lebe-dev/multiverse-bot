@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/lrstanley/go-ytdlp"
+	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/probe"
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 )
 
@@ -149,11 +150,15 @@ func (d *Downloader) download(ctx context.Context, url, format string) (*domain.
 	}
 
 	title := strings.TrimSpace(result.Stdout)
-	d.log.Debug("yt-dlp finished", "title", title, "size_bytes", fi.Size())
+	size := probe.ApplyFaststart(ctx, filePath)
+	if size == 0 {
+		size = fi.Size()
+	}
+	d.log.Debug("yt-dlp finished", "title", title, "size_bytes", size)
 	return &domain.Video{
 		URL:      url,
 		FilePath: filePath,
-		Size:     fi.Size(),
+		Size:     size,
 		Title:    title,
 	}, nil
 }
