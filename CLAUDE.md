@@ -29,8 +29,8 @@ just docker-logs  # tail bot logs
 | `ADMIN_USERS` | no | — | Comma-separated Telegram admin usernames |
 | `COBALT_API_URL` | no | `https://api.cobalt.tools` | Cobalt API base URL |
 | `YTDLP_PATH` | no | `yt-dlp` | Path to yt-dlp executable |
-| `WATCH_INSTAGRAM_POLL_INTERVAL` | no | `15m` | How often to check for new Instagram stories |
-| `WATCH_INSTAGRAM_POSTS_POLL_INTERVAL` | no | `30m` | How often to check for new Instagram posts |
+| `WATCH_INSTAGRAM_POLL_INTERVAL` | no | `24h` | How often to check for new Instagram stories |
+| `WATCH_INSTAGRAM_POSTS_POLL_INTERVAL` | no | `24h` | How often to check for new Instagram posts |
 | `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn`, `error` |
 | `DEBUG` | no | `false` | Show verbose error details to admin chats |
 | `THREADS_ENGINE` | no | `default` | Threads engine: `default` (direct scraping with uTLS) or `lovethreads` (lovethreads.net proxy) |

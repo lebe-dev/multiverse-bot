@@ -95,9 +95,9 @@ func Load() (*Config, error) {
 
 		WatchAutoDownload: parseBool(os.Getenv("WATCH_AUTO_DOWNLOAD")),
 
-		WatchInstagramPollInterval: parseDuration(os.Getenv("WATCH_INSTAGRAM_POLL_INTERVAL"), "15m"),
+		WatchInstagramPollInterval: parseDuration(os.Getenv("WATCH_INSTAGRAM_POLL_INTERVAL"), "24h"),
 
-		WatchInstagramPostsPollInterval: parseDuration(os.Getenv("WATCH_INSTAGRAM_POSTS_POLL_INTERVAL"), "30m"),
+		WatchInstagramPostsPollInterval: parseDuration(os.Getenv("WATCH_INSTAGRAM_POSTS_POLL_INTERVAL"), "24h"),
 
 		WatchPollInterval:     parseDuration(os.Getenv("WATCH_POLL_INTERVAL"), "15m"),
 		WatchMaxSubs:          parseInt(os.Getenv("WATCH_MAX_SUBSCRIPTIONS"), 20),
