@@ -6,4 +6,5 @@ type Video struct {
 	Platform Platform
 	Size     int64
 	Title    string
+	Channel  string
 }

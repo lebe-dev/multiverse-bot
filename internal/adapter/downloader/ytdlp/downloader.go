@@ -123,6 +123,7 @@ func (d *Downloader) download(ctx context.Context, url, format string) (*domain.
 		Output(outputTemplate).
 		NoPlaylist().
 		JsRuntimes("node").
+		Print("after_move:%(channel)s").
 		Print("after_move:%(title)s")
 
 	if cp := d.cookiePath(url); cp != "" {
@@ -148,12 +149,17 @@ func (d *Downloader) download(ctx context.Context, url, format string) (*domain.
 		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
 	}
 
-	title := strings.TrimSpace(result.Stdout)
-	d.log.Debug("yt-dlp finished", "title", title, "size_bytes", fi.Size())
+	lines := strings.SplitN(strings.TrimSpace(result.Stdout), "\n", 2)
+	channel, title := lines[0], ""
+	if len(lines) == 2 {
+		title = lines[1]
+	}
+	d.log.Debug("yt-dlp finished", "channel", channel, "title", title, "size_bytes", fi.Size())
 	return &domain.Video{
 		URL:      url,
 		FilePath: filePath,
 		Size:     fi.Size(),
+		Channel:  channel,
 		Title:    title,
 	}, nil
 }
