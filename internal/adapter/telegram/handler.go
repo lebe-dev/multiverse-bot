@@ -137,6 +137,7 @@ type downloadResult struct {
 	filePath string
 	fileSize int64
 	title    string
+	channel  string
 	cleanup  func()
 }
 
@@ -161,6 +162,7 @@ func (b *Bot) downloadForURL(ctx context.Context, c tele.Context, url, quality s
 				filePath: ytVideo.FilePath,
 				fileSize: ytVideo.Size,
 				title:    ytVideo.Title,
+				channel:  ytVideo.Channel,
 				cleanup:  func() { _ = os.RemoveAll(dir) },
 			}, nil
 		}
@@ -183,6 +185,7 @@ func (b *Bot) downloadForURL(ctx context.Context, c tele.Context, url, quality s
 		filePath: video.FilePath,
 		fileSize: video.Size,
 		title:    video.Title,
+		channel:  video.Channel,
 		cleanup:  svcCleanup,
 	}, nil
 }
@@ -253,6 +256,13 @@ func (b *Bot) handleText(c tele.Context) error {
 		caption := result.title
 		if !st.Caption {
 			caption = ""
+		} else {
+			if result.channel != "" {
+				caption = "🎬 " + result.channel + "\n" + caption
+			}
+			if url != "" {
+				caption += "\n\n" + url
+			}
 		}
 
 		var sendErr error
@@ -336,6 +346,8 @@ func (b *Bot) handleMediaURL(c tele.Context, url string, st UserSettings) error 
 	caption := result.Title
 	if !st.Caption {
 		caption = ""
+	} else if url != "" {
+		caption += "\n\n" + url
 	}
 
 	maxItem := result.MaxItemSize()
