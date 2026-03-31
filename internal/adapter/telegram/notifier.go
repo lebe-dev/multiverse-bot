@@ -8,6 +8,7 @@ import (
 
 	tele "gopkg.in/telebot.v4"
 
+	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/probe"
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 	"gitlab.com/tiny-services/multiverse-bot/internal/usecase"
 )
@@ -89,7 +90,7 @@ func (n *autoDownloadNotifier) NotifyNewVideo(ctx context.Context, userID int64,
 	}
 	defer cleanup()
 
-	caption := fmt.Sprintf("🎬 %s\n%s", video.ChannelName, video.Title)
+	caption := fmt.Sprintf("🎬 %s\n%s\n\n%s", video.ChannelName, video.Title, video.URL)
 	recipient := tele.ChatID(userID)
 
 	client := n.teleBot
@@ -97,9 +98,14 @@ func (n *autoDownloadNotifier) NotifyNewVideo(ctx context.Context, userID int64,
 		client = n.localBot
 	}
 
+	w, h, dur := probe.VideoMeta(dlCtx, result.FilePath)
 	if _, err := client.Send(recipient, &tele.Video{
-		File:    tele.FromDisk(result.FilePath),
-		Caption: caption,
+		File:      tele.FromDisk(result.FilePath),
+		Caption:   caption,
+		Width:     w,
+		Height:    h,
+		Duration:  dur,
+		Streaming: true,
 	}); err != nil {
 		n.log.Error("failed to send auto-downloaded video",
 			"user_id", userID,
