@@ -202,6 +202,9 @@ func (s *TransferService) seedYouTubeFeed(ctx context.Context, userID int64, cha
 }
 
 func (s *TransferService) seedStories(ctx context.Context, userID int64, username string) {
+	if s.storyFetch == nil {
+		return
+	}
 	stories, err := s.storyFetch.FetchStoryIDs(ctx, username)
 	if err != nil {
 		s.log.Warn("failed to seed stories on import", "username", username, "error", err)
@@ -215,6 +218,9 @@ func (s *TransferService) seedStories(ctx context.Context, userID int64, usernam
 }
 
 func (s *TransferService) seedPosts(ctx context.Context, userID int64, username string) {
+	if s.postFetch == nil {
+		return
+	}
 	posts, err := s.postFetch.FetchPostIDs(ctx, username)
 	if err != nil {
 		s.log.Warn("failed to seed posts on import", "username", username, "error", err)

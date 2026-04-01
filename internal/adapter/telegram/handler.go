@@ -52,9 +52,11 @@ func (b *Bot) RegisterHandlers(allowedUsers []string) {
 	b.bot.Handle("/admin", b.handleAdminCommand)
 
 	b.bot.Handle("/add_youtube_cookies", b.handleAddCookies("youtube"))
-	b.bot.Handle("/add_instagram_cookies", b.handleAddCookies("instagram"))
 	b.bot.Handle("/delete_youtube_cookies", b.handleDeleteCookies("youtube"))
-	b.bot.Handle("/delete_instagram_cookies", b.handleDeleteCookies("instagram"))
+	if b.instagramEnabled {
+		b.bot.Handle("/add_instagram_cookies", b.handleAddCookies("instagram"))
+		b.bot.Handle("/delete_instagram_cookies", b.handleDeleteCookies("instagram"))
+	}
 
 	// Legacy redirects (one release cycle).
 	b.bot.Handle("/auth", func(c tele.Context) error { return c.Send("Команда перенесена → /drive") })
@@ -97,15 +99,24 @@ func (b *Bot) handleHelpCommand(c tele.Context) error {
 }
 
 func (b *Bot) buildHelpText(c tele.Context) string {
+	platforms := "YouTube, X (Twitter), Threads"
+	if b.instagramEnabled {
+		platforms = "YouTube, Instagram, X (Twitter), Threads"
+	}
+
 	msg := "Multiverse Bot\n\n" +
-		"Платформы: YouTube, Instagram, X (Twitter), Threads\n\n" +
+		"Платформы: " + platforms + "\n\n" +
 		"Отправьте ссылку — бот скачает и пришлёт видео.\n\n" +
 		"Команды:\n" +
 		"/settings — настройки (качество, подпись)\n" +
-		"/watch_youtube <url> — подписаться на YouTube-канал\n" +
-		"/watch_instagram_stories <url> — подписаться на сторис\n" +
-		"/watch_instagram_posts <url> — подписаться на посты\n" +
-		"/export — экспорт подписок и настроек\n" +
+		"/watch_youtube <url> — подписаться на YouTube-канал\n"
+
+	if b.instagramEnabled {
+		msg += "/watch_instagram_stories <url> — подписаться на сторис\n" +
+			"/watch_instagram_posts <url> — подписаться на посты\n"
+	}
+
+	msg += "/export — экспорт подписок и настроек\n" +
 		"/import — импорт подписок и настроек\n" +
 		"/details <url> — доступные форматы и размеры\n" +
 		"/save [url] — сохранить в Google Drive\n" +
@@ -902,7 +913,11 @@ func (b *Bot) adminPanelMsg() string {
 
 	// Cookies status.
 	sb.WriteString("\n")
-	for _, p := range []struct{ name, key string }{{"YouTube", "youtube"}, {"Instagram", "instagram"}} {
+	cookiePlatforms := []struct{ name, key string }{{"YouTube", "youtube"}}
+	if b.instagramEnabled {
+		cookiePlatforms = append(cookiePlatforms, struct{ name, key string }{"Instagram", "instagram"})
+	}
+	for _, p := range cookiePlatforms {
 		if b.cookies != nil && b.cookies.HasCookies(p.key) {
 			fmt.Fprintf(&sb, "%s Cookies: ✅\n", p.name)
 		} else {
@@ -910,7 +925,9 @@ func (b *Bot) adminPanelMsg() string {
 		}
 	}
 	sb.WriteString("\n/add_youtube_cookies — загрузить YouTube cookies")
-	sb.WriteString("\n/add_instagram_cookies — загрузить Instagram cookies")
+	if b.instagramEnabled {
+		sb.WriteString("\n/add_instagram_cookies — загрузить Instagram cookies")
+	}
 	sb.WriteString("\n/delete_youtube_cookies — удалить YouTube cookies")
 	sb.WriteString("\n/delete_instagram_cookies — удалить Instagram cookies")
 	return sb.String()

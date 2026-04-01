@@ -29,10 +29,11 @@ type Bot struct {
 	drive     domain.DriveManager      // per-user Google Drive upload
 	plugins   domain.PluginRegistry    // nil when no plugins configured
 
-	version string
-	tgLimit int64
-	cookies *cookies.Manager
-	debug   bool
+	version            string
+	tgLimit            int64
+	cookies            *cookies.Manager
+	debug              bool
+	instagramEnabled   bool
 
 	pendingCookies sync.Map // map[int64]string — userID → "youtube"|"instagram"
 	pendingImport  sync.Map // map[int64]struct{} — userID → pending import
@@ -77,6 +78,10 @@ func (b *Bot) SetConfig(version string, tgLimit int64, cm *cookies.Manager, debu
 	b.tgLimit = tgLimit
 	b.cookies = cm
 	b.debug = debug
+}
+
+func (b *Bot) SetInstagramEnabled(enabled bool) {
+	b.instagramEnabled = enabled
 }
 
 func (b *Bot) SetQualityDownloader(d domain.QualityDownloader) {

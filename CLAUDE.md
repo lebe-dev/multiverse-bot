@@ -27,6 +27,7 @@ just docker-logs  # tail bot logs
 | `TELEGRAM_BOT_TOKEN` | yes | — | Bot token from BotFather |
 | `ALLOWED_USERS` | no | (open) | Comma-separated Telegram usernames; empty = allow everyone |
 | `ADMIN_USERS` | no | — | Comma-separated Telegram admin usernames |
+| `INSTAGRAM_FEATURES_ENABLED` | no | `false` | Enable Instagram download, watchers, and cookie commands |
 | `COBALT_API_URL` | no | `https://api.cobalt.tools` | Cobalt API base URL |
 | `YTDLP_PATH` | no | `yt-dlp` | Path to yt-dlp executable |
 | `WATCH_INSTAGRAM_POLL_INTERVAL` | no | `24h` | How often to check for new Instagram stories |

@@ -31,7 +31,7 @@ import (
 	"gitlab.com/tiny-services/multiverse-bot/internal/usecase"
 )
 
-const Version = "0.10.0"
+const Version = "0.11.0"
 
 func main() {
 	cfg, err := config.Load()
@@ -75,10 +75,13 @@ func main() {
 	}
 	defer cookieMgr.Cleanup()
 
-	igCookiePath := func() string { return cookieMgr.CookieFilePath("instagram") }
+	var igCookiePath func() string
+	if cfg.InstagramFeaturesEnabled {
+		igCookiePath = func() string { return cookieMgr.CookieFilePath("instagram") }
+	}
 	ytCookiePath := func() string { return cookieMgr.CookieFilePath("youtube") }
 	ytdlpCookiePath := func(url string) string {
-		if strings.Contains(url, "instagram.com") {
+		if cfg.InstagramFeaturesEnabled && strings.Contains(url, "instagram.com") {
 			return cookieMgr.CookieFilePath("instagram")
 		}
 		return cookieMgr.CookieFilePath("youtube")
@@ -127,6 +130,7 @@ func main() {
 	// ── Bot configuration ─────────────────────────────────────────────────────
 	// Must happen before creating notifiers — they capture tgLimit and localBot.
 	bot.SetConfig(Version, cfg.TGLimit, cookieMgr, cfg.Debug)
+	bot.SetInstagramEnabled(cfg.InstagramFeaturesEnabled)
 	bot.SetQualityDownloader(ytdlpDownloader)
 	bot.SetAdminUsers(cfg.AdminUsers)
 	bot.SetAdminChatStore(telegram.NewAdminChatStore(cfg.AdminChatsFile, log))
@@ -176,34 +180,49 @@ func main() {
 		cfg.WatchPollInterval, cfg.WatchMaxSubs, cfg.WatchMaxChannelsTotal,
 	)
 
-	// ── Instagram Story Watcher ─────────────────────────────────────────────
-	igFetcher := instagramwatcher.NewFetcher(cfg.YtdlpPath, igCookiePath, log)
-	igResolver := instagramwatcher.NewResolver(cfg.YtdlpPath, igCookiePath, log)
-	storyNotifier := bot.NewStoryNotifier(log)
+	// ── Instagram Watchers ──────────────────────────────────────────────────
+	var storyWatchSvc *usecase.StoryWatchService
+	var postWatchSvc *usecase.PostWatchService
+	var igFetcher domain.StoryFetcher
+	var igPostFetcher domain.PostFetcher
 
-	storyWatchSvc := usecase.NewStoryWatchService(
-		store, igFetcher, igResolver, storyNotifier, log,
-		cfg.WatchInstagramPollInterval, cfg.WatchMaxSubs, cfg.WatchMaxChannelsTotal,
-	)
-	igAPIClient := instagramwatcher.NewAPIClient(igCookiePath, log)
-	storyWatchSvc.SetMetadataEnricher(igAPIClient)
+	if cfg.InstagramFeaturesEnabled {
+		igFetcher = instagramwatcher.NewFetcher(cfg.YtdlpPath, igCookiePath, log)
+		igResolver := instagramwatcher.NewResolver(cfg.YtdlpPath, igCookiePath, log)
+		storyNotifier := bot.NewStoryNotifier(log)
 
-	// ── Instagram Post Watcher ──────────────────────────────────────────
-	igPostFetcher := instagramwatcher.NewPostFetcher(cfg.YtdlpPath, igCookiePath, log)
-	postNotifier := bot.NewPostNotifier(log)
+		storyWatchSvc = usecase.NewStoryWatchService(
+			store, igFetcher, igResolver, storyNotifier, log,
+			cfg.WatchInstagramPollInterval, cfg.WatchMaxSubs, cfg.WatchMaxChannelsTotal,
+		)
+		igAPIClient := instagramwatcher.NewAPIClient(igCookiePath, log)
+		storyWatchSvc.SetMetadataEnricher(igAPIClient)
 
-	postWatchSvc := usecase.NewPostWatchService(
-		store, igPostFetcher, igResolver, postNotifier, log,
-		cfg.WatchInstagramPostsPollInterval, cfg.WatchMaxSubs, cfg.WatchMaxChannelsTotal,
-	)
+		igPostFetcher = instagramwatcher.NewPostFetcher(cfg.YtdlpPath, igCookiePath, log)
+		postNotifier := bot.NewPostNotifier(log)
+
+		postWatchSvc = usecase.NewPostWatchService(
+			store, igPostFetcher, igResolver, postNotifier, log,
+			cfg.WatchInstagramPostsPollInterval, cfg.WatchMaxSubs, cfg.WatchMaxChannelsTotal,
+		)
+
+		log.Info("instagram features enabled")
+	} else {
+		det.DisablePlatform(domain.PlatformInstagram)
+		log.Info("instagram features disabled")
+	}
 
 	// ── Transfer (export/import) ─────────────────────────────────────────
 	transferSvc := usecase.NewTransferService(store, store, store, feedFetcher, igFetcher, igPostFetcher, log)
 
 	bot.RegisterHandlers(cfg.AllowedUsers)
 	bot.RegisterWatchHandlers(watchSvc)
-	bot.RegisterStoryWatchHandlers(storyWatchSvc)
-	bot.RegisterPostWatchHandlers(postWatchSvc)
+	if storyWatchSvc != nil {
+		bot.RegisterStoryWatchHandlers(storyWatchSvc)
+	}
+	if postWatchSvc != nil {
+		bot.RegisterPostWatchHandlers(postWatchSvc)
+	}
 	bot.RegisterTransferHandlers(transferSvc)
 
 	// ── Run ───────────────────────────────────────────────────────────────────
@@ -212,8 +231,12 @@ func main() {
 
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error { return watchSvc.Run(gCtx) })
-	g.Go(func() error { return storyWatchSvc.Run(gCtx) })
-	g.Go(func() error { return postWatchSvc.Run(gCtx) })
+	if storyWatchSvc != nil {
+		g.Go(func() error { return storyWatchSvc.Run(gCtx) })
+	}
+	if postWatchSvc != nil {
+		g.Go(func() error { return postWatchSvc.Run(gCtx) })
+	}
 
 	go func() {
 		log.Info("bot started")

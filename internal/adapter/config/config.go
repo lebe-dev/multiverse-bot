@@ -55,6 +55,9 @@ type Config struct {
 	// Auto-download: send video file immediately instead of notification with button.
 	WatchAutoDownload bool
 
+	// Instagram features toggle (default: false — all Instagram functionality disabled).
+	InstagramFeaturesEnabled bool
+
 	// Instagram story watcher
 	WatchInstagramPollInterval time.Duration
 
@@ -94,6 +97,8 @@ func Load() (*Config, error) {
 		Debug: parseBool(os.Getenv("DEBUG")),
 
 		WatchAutoDownload: parseBool(os.Getenv("WATCH_AUTO_DOWNLOAD")),
+
+		InstagramFeaturesEnabled: parseBool(os.Getenv("INSTAGRAM_FEATURES_ENABLED")),
 
 		WatchInstagramPollInterval: parseDuration(os.Getenv("WATCH_INSTAGRAM_POLL_INTERVAL"), "24h"),
 

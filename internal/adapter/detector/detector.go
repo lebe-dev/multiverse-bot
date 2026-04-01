@@ -26,6 +26,16 @@ func New() *RegexDetector {
 	}
 }
 
+func (d *RegexDetector) DisablePlatform(p domain.Platform) {
+	filtered := d.patterns[:0]
+	for _, e := range d.patterns {
+		if e.platform != p {
+			filtered = append(filtered, e)
+		}
+	}
+	d.patterns = filtered
+}
+
 func (d *RegexDetector) Detect(url string) domain.Platform {
 	for _, e := range d.patterns {
 		if e.re.MatchString(url) {
