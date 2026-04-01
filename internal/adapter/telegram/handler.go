@@ -135,9 +135,11 @@ func (b *Bot) buildHelpText(c tele.Context) string {
 		msg += "\nАдмин:\n" +
 			"/admin — панель администратора\n" +
 			"/add_youtube_cookies — загрузить YouTube cookies\n" +
-			"/add_instagram_cookies — загрузить Instagram cookies\n" +
-			"/delete_youtube_cookies — удалить YouTube cookies\n" +
-			"/delete_instagram_cookies — удалить Instagram cookies\n"
+			"/delete_youtube_cookies — удалить YouTube cookies\n"
+		if b.instagramEnabled {
+			msg += "/add_instagram_cookies — загрузить Instagram cookies\n" +
+				"/delete_instagram_cookies — удалить Instagram cookies\n"
+		}
 	}
 	return msg
 }
