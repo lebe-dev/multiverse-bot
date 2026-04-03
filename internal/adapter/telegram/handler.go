@@ -868,7 +868,11 @@ func (b *Bot) handleError(c tele.Context, err error) error {
 	switch {
 	case errors.Is(err, domain.ErrUnsupportedPlatform):
 		b.log.Warn("unsupported platform", "user", user, "user_id", userID)
-		return c.Send("Платформа не поддерживается. Поддерживаются: YouTube, Instagram, X (Twitter), Threads.")
+		platforms := "YouTube, X (Twitter), Threads"
+		if b.instagramEnabled {
+			platforms = "YouTube, Instagram, X (Twitter), Threads"
+		}
+		return c.Send(fmt.Sprintf("Платформа не поддерживается. Поддерживаются: %s.", platforms))
 	case errors.Is(err, domain.ErrVideoTooLarge):
 		b.log.Warn("video too large", "user", user, "user_id", userID)
 		return c.Send("Видео слишком большое.")
