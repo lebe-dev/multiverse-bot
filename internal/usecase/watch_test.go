@@ -227,7 +227,7 @@ func TestPoll_NewVideo_Notified(t *testing.T) {
 	store := newMockStore()
 	_ = store.AddSubscription(context.Background(), 1, "UC123", "Test")
 
-	video := domain.FeedVideo{VideoID: "newvid", ChannelID: "UC123", Title: "New Video", URL: "https://youtube.com/watch?v=newvid"}
+	video := domain.FeedVideo{VideoID: "newvid", ChannelID: "UC123", Title: "New Video", URL: "https://youtube.com/watch?v=newvid", Published: time.Now()}
 	fetcher := &mockFetcher{videos: []domain.FeedVideo{video}}
 	notifier := &mockNotifier{}
 
@@ -276,7 +276,7 @@ func TestPoll_FetchError_DoesNotAbortCycle(t *testing.T) {
 		if channelID == "UC123" {
 			return nil, errors.New("network error")
 		}
-		return []domain.FeedVideo{{VideoID: "v1", ChannelID: "UC456"}}, nil
+		return []domain.FeedVideo{{VideoID: "v1", ChannelID: "UC456", Published: time.Now()}}, nil
 	}}
 	notifier := &mockNotifier{}
 
@@ -288,6 +288,46 @@ func TestPoll_FetchError_DoesNotAbortCycle(t *testing.T) {
 	}
 	if len(notifier.notified) != 1 {
 		t.Errorf("expected 1 notification for UC456, got %d", len(notifier.notified))
+	}
+}
+
+func TestPoll_StaleVideo_NotNotified(t *testing.T) {
+	store := newMockStore()
+	_ = store.AddSubscription(context.Background(), 1, "UC123", "Test")
+
+	// Video older than maxVideoAge (48h) — must not be sent, even though
+	// it is unseen. Guards against CleanupExpiredSeen wiping history and
+	// causing old clips to be re-announced after downtime.
+	old := domain.FeedVideo{VideoID: "oldvid", ChannelID: "UC123", Published: time.Now().Add(-72 * time.Hour)}
+	fresh := domain.FeedVideo{VideoID: "freshvid", ChannelID: "UC123", Published: time.Now().Add(-1 * time.Hour)}
+	fetcher := &mockFetcher{videos: []domain.FeedVideo{old, fresh}}
+	notifier := &mockNotifier{}
+
+	svc := newWatchSvc(store, fetcher, &mockResolver{}, notifier)
+	svc.Poll(context.Background())
+
+	if len(notifier.notified) != 1 {
+		t.Fatalf("expected exactly 1 notification (fresh video only), got %d", len(notifier.notified))
+	}
+	if notifier.notified[0].VideoID != "freshvid" {
+		t.Errorf("expected freshvid, got %q", notifier.notified[0].VideoID)
+	}
+}
+
+func TestPoll_MissingPublished_NotNotified(t *testing.T) {
+	store := newMockStore()
+	_ = store.AddSubscription(context.Background(), 1, "UC123", "Test")
+
+	// Zero Published — parse failure or malformed feed. Prefer silence over flooding.
+	video := domain.FeedVideo{VideoID: "unknown", ChannelID: "UC123"}
+	fetcher := &mockFetcher{videos: []domain.FeedVideo{video}}
+	notifier := &mockNotifier{}
+
+	svc := newWatchSvc(store, fetcher, &mockResolver{}, notifier)
+	svc.Poll(context.Background())
+
+	if len(notifier.notified) != 0 {
+		t.Errorf("expected 0 notifications for video with zero Published, got %d", len(notifier.notified))
 	}
 }
 

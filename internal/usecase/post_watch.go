@@ -10,6 +10,11 @@ import (
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 )
 
+// maxPostAge bounds how old an Instagram post may be and still trigger a
+// notification. Prevents re-flooding subscribers with old posts after downtime
+// or after CleanupExpiredSeenPosts wipes seen_posts history older than its TTL.
+const maxPostAge = 48 * time.Hour
+
 type PostWatchService struct {
 	store         domain.PostSubscriptionStore
 	fetcher       domain.PostFetcher
@@ -168,6 +173,11 @@ func (s *PostWatchService) pollUsername(ctx context.Context, username string) {
 	for _, post := range posts {
 		if ctx.Err() != nil {
 			return
+		}
+
+		if post.Timestamp.IsZero() || time.Since(post.Timestamp) > maxPostAge {
+			s.log.Debug("skipping stale post", "post", post.PostID, "timestamp", post.Timestamp)
+			continue
 		}
 
 		for _, userID := range subscribers {

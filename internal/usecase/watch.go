@@ -9,6 +9,11 @@ import (
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 )
 
+// maxVideoAge bounds how old a video may be and still trigger a notification.
+// Prevents re-flooding users with ancient clips after a long downtime or after
+// CleanupExpiredSeen wipes the seen_videos history older than its TTL.
+const maxVideoAge = 48 * time.Hour
+
 type WatchService struct {
 	store            domain.SubscriptionStore
 	fetcher          domain.FeedFetcher
@@ -138,6 +143,11 @@ func (s *WatchService) pollChannel(ctx context.Context, channelID string) {
 
 	for _, userID := range subscribers {
 		for _, video := range videos {
+			if video.Published.IsZero() || time.Since(video.Published) > maxVideoAge {
+				s.log.Debug("skipping stale video", "video", video.VideoID, "published", video.Published)
+				continue
+			}
+
 			seen, err := s.store.HasSeenVideo(ctx, userID, channelID, video.VideoID)
 			if err != nil {
 				s.log.Error("failed to check seen video", "video", video.VideoID, "error", err)

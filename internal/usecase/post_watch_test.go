@@ -210,7 +210,7 @@ func TestPostPoll_NewPost_Notified(t *testing.T) {
 	_ = store.AddPostSubscription(context.Background(), 1, "natgeo")
 
 	fetcher := &mockPostFetcher{
-		posts: []domain.PostItem{{PostID: "p1", Username: "natgeo", URL: "https://www.instagram.com/p/p1/"}},
+		posts: []domain.PostItem{{PostID: "p1", Username: "natgeo", URL: "https://www.instagram.com/p/p1/", Timestamp: time.Now()}},
 	}
 	notifier := &mockPostNotifier{}
 
@@ -272,7 +272,7 @@ func TestPostPoll_MultipleSubscribers_NotifiedSeparately(t *testing.T) {
 	_ = store.AddPostSubscription(context.Background(), 2, "natgeo")
 
 	fetcher := &mockPostFetcher{
-		posts: []domain.PostItem{{PostID: "p1", Username: "natgeo", URL: "https://www.instagram.com/p/p1/"}},
+		posts: []domain.PostItem{{PostID: "p1", Username: "natgeo", URL: "https://www.instagram.com/p/p1/", Timestamp: time.Now()}},
 	}
 	notifier := &mockPostNotifier{}
 
@@ -281,5 +281,44 @@ func TestPostPoll_MultipleSubscribers_NotifiedSeparately(t *testing.T) {
 
 	if len(notifier.notified) != 2 {
 		t.Errorf("expected 2 notifications (one per subscriber), got %d", len(notifier.notified))
+	}
+}
+
+func TestPostPoll_StalePost_NotNotified(t *testing.T) {
+	store := newMockPostStore()
+	_ = store.AddPostSubscription(context.Background(), 1, "natgeo")
+
+	// Post older than maxPostAge (48h) — must not be sent even though unseen.
+	// Guards against CleanupExpiredSeenPosts wiping history and causing old
+	// posts to be re-announced after downtime.
+	old := domain.PostItem{PostID: "old", Username: "natgeo", Timestamp: time.Now().Add(-72 * time.Hour)}
+	fresh := domain.PostItem{PostID: "fresh", Username: "natgeo", Timestamp: time.Now().Add(-1 * time.Hour)}
+	fetcher := &mockPostFetcher{posts: []domain.PostItem{old, fresh}}
+	notifier := &mockPostNotifier{}
+
+	svc := newPostWatchSvc(store, fetcher, &mockStoryResolver{}, notifier)
+	svc.Poll(context.Background())
+
+	if len(notifier.notified) != 1 {
+		t.Fatalf("expected exactly 1 notification (fresh post only), got %d", len(notifier.notified))
+	}
+	if notifier.notified[0].PostID != "fresh" {
+		t.Errorf("expected fresh post, got %q", notifier.notified[0].PostID)
+	}
+}
+
+func TestPostPoll_MissingTimestamp_NotNotified(t *testing.T) {
+	store := newMockPostStore()
+	_ = store.AddPostSubscription(context.Background(), 1, "natgeo")
+
+	// Zero Timestamp — scraper failed to parse the field. Prefer silence over flooding.
+	fetcher := &mockPostFetcher{posts: []domain.PostItem{{PostID: "unknown", Username: "natgeo"}}}
+	notifier := &mockPostNotifier{}
+
+	svc := newPostWatchSvc(store, fetcher, &mockStoryResolver{}, notifier)
+	svc.Poll(context.Background())
+
+	if len(notifier.notified) != 0 {
+		t.Errorf("expected 0 notifications for post with zero Timestamp, got %d", len(notifier.notified))
 	}
 }
