@@ -47,6 +47,7 @@ func (b *Bot) RegisterHandlers(allowedUsers []string) {
 	b.bot.Handle("/help", b.handleHelpCommand)
 	b.bot.Handle("/settings", b.handleSettingsCommand)
 	b.bot.Handle("/details", b.handleDetailsCommand)
+	b.bot.Handle("/audio", b.handleAudioCommand)
 	b.bot.Handle("/save", b.handleSaveCommand)
 	b.bot.Handle("/drive", b.handleDriveCommand)
 	b.bot.Handle("/admin", b.handleAdminCommand)
@@ -119,6 +120,7 @@ func (b *Bot) buildHelpText(c tele.Context) string {
 	msg += "/export — экспорт подписок и настроек\n" +
 		"/import — импорт подписок и настроек\n" +
 		"/details <url> — доступные форматы и размеры\n" +
+		"/audio <url> — скачать только аудио (YouTube)\n" +
 		"/save [url] — сохранить в Google Drive\n" +
 		"/drive — управление Google Drive\n" +
 		"/help — список команд\n"
@@ -715,6 +717,77 @@ func (b *Bot) handleSaveCommand(c tele.Context) error {
 		"size_mb", bestMB,
 	)
 	return c.Send(fmt.Sprintf("✅ Сохранено в Google Drive\n\nРазмер: %d МБ\n\n%s", bestMB, link))
+}
+
+// ── /audio command ────────────────────────────────────────────────────────────
+
+func (b *Bot) handleAudioCommand(c tele.Context) error {
+	if b.qualityDl == nil {
+		return c.Send("⚙️ Загрузчик недоступен.")
+	}
+
+	userID := c.Sender().ID
+	url := extractURL(strings.Join(c.Args(), " "))
+	if url == "" {
+		if val, ok := b.lastURL.Load(userID); ok {
+			url = val.(string)
+		}
+	}
+	if url == "" {
+		return c.Send("Использование: /audio <url>\n\nИли отправьте ссылку, затем /audio")
+	}
+
+	if free, err := freeDiskBytes("."); err == nil && free < minDiskSpaceBytes {
+		b.log.Warn("low disk space before /audio", "free_mb", free/(1024*1024))
+		return c.Send(fmt.Sprintf("⚠️ Мало места на диске (%d МБ). Попробуйте позже.", free/(1024*1024)))
+	}
+
+	statusMsg, _ := b.bot.Send(c.Recipient(), "⏳ Скачиваю аудио...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), downloadTimeout)
+	defer cancel()
+
+	video, err := b.qualityDl.DownloadAudio(ctx, url)
+	if err != nil {
+		b.deleteMsg(statusMsg)
+		b.log.Error("audio download failed", "url", url, "error", err)
+		return b.handleError(c, err)
+	}
+	defer func() { _ = os.RemoveAll(filepath.Dir(video.FilePath)) }()
+
+	sizeMB := video.Size / (1024 * 1024)
+	b.log.Info("audio downloaded",
+		"user", c.Sender().Username,
+		"user_id", userID,
+		"url", url,
+		"size_mb", sizeMB,
+	)
+
+	b.deleteMsg(statusMsg)
+
+	audio := &tele.Audio{
+		File:      tele.FromDisk(video.FilePath),
+		Title:     video.Title,
+		Performer: video.Channel,
+	}
+
+	client := b.bot
+	if video.Size > b.tgLimit && b.localBot != nil {
+		client = b.localBot
+	} else if video.Size > b.tgLimit {
+		return c.Send(fmt.Sprintf("❌ Файл %d МБ — слишком большой для Telegram.", sizeMB))
+	}
+
+	_, sendErr := client.Send(c.Recipient(), audio)
+	if sendErr != nil {
+		b.log.Error("audio send failed",
+			"user", c.Sender().Username,
+			"user_id", userID,
+			"url", url,
+			"error", sendErr,
+		)
+	}
+	return sendErr
 }
 
 // ── /drive command (replaces /auth + /disconnect) ─────────────────────────────

@@ -31,7 +31,7 @@ import (
 	"gitlab.com/tiny-services/multiverse-bot/internal/usecase"
 )
 
-const Version = "0.11.0"
+const Version = "0.12.0"
 
 func main() {
 	cfg, err := config.Load()

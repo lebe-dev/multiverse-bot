@@ -30,5 +30,6 @@ type FormatSummary struct {
 type QualityDownloader interface {
 	DownloadQuality(ctx context.Context, url, quality string) (*Video, error)
 	DownloadBest(ctx context.Context, url string) (*Video, error)
+	DownloadAudio(ctx context.Context, url string) (*Video, error)
 	AnalyzeFormats(ctx context.Context, url string) (*FormatSummary, error)
 }

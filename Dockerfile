@@ -16,7 +16,7 @@ RUN GOOS=linux GOARCH=${TARGETARCH} CGO_ENABLED=0 go build -ldflags="-s -w" -o /
     && upx --best --lzma /bot
 
 # ── Stage 2: fetch yt-dlp static binary ─────────────────────────────────────
-FROM alpine:3.23.3 AS ytdlp
+FROM alpine:3.23 AS ytdlp
 
 ARG TARGETARCH
 
@@ -31,7 +31,7 @@ RUN apk add --no-cache wget \
     && chmod +x /usr/local/bin/yt-dlp
 
 # ── Stage 3: minimal runtime ─────────────────────────────────────────────────
-FROM alpine:3.23.3
+FROM alpine:3.23
 
 RUN apk add --no-cache ca-certificates ffmpeg nodejs tzdata
 

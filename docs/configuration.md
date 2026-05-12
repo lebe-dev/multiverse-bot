@@ -82,6 +82,7 @@
 | `/watch_instagram_stories <url>` | Подписаться на Instagram сторис (требует `INSTAGRAM_FEATURES_ENABLED=true`) |
 | `/watch_instagram_posts <url>` | Подписаться на Instagram посты (требует `INSTAGRAM_FEATURES_ENABLED=true`) |
 | `/details <url>` | Показать доступные форматы и размеры |
+| `/audio [url]` | Скачать только аудио (YouTube, M4A) |
 | `/save [url]` | Сохранить видео в Google Drive |
 | `/drive` | Управление подключением Google Drive |
 | `/export` | Экспорт подписок и настроек |

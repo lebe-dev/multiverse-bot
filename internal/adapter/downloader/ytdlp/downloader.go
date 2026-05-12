@@ -21,6 +21,9 @@ const format720 = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[heigh
 // formatBest downloads the highest available quality (for Google Drive archive).
 const formatBest = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
 
+// formatAudio selects the best available M4A audio stream without video.
+const formatAudio = "bestaudio[ext=m4a]/bestaudio"
+
 type Downloader struct {
 	execPath   string
 	cookiePath func(url string) string
@@ -65,6 +68,11 @@ func (d *Downloader) DownloadBest(ctx context.Context, url string) (*domain.Vide
 // Falls back to 720p for unknown values.
 func (d *Downloader) DownloadQuality(ctx context.Context, url, quality string) (*domain.Video, error) {
 	return d.download(ctx, normalizeURL(url), qualityFormat(quality))
+}
+
+// DownloadAudio downloads the best available M4A audio track without video.
+func (d *Downloader) DownloadAudio(ctx context.Context, url string) (*domain.Video, error) {
+	return d.download(ctx, normalizeURL(url), formatAudio)
 }
 
 // qualityFormat returns the yt-dlp format selector for the given quality level.

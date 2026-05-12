@@ -59,6 +59,25 @@ func TestFormats(t *testing.T) {
 	if formatBest == "" {
 		t.Error("formatBest must not be empty")
 	}
+	if formatAudio == "" {
+		t.Error("formatAudio must not be empty")
+	}
+}
+
+func TestAudioFormat(t *testing.T) {
+	// formatAudio must select audio-only streams (no video).
+	for _, want := range []string{"bestaudio", "m4a"} {
+		found := false
+		for i := 0; i <= len(formatAudio)-len(want); i++ {
+			if formatAudio[i:i+len(want)] == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("formatAudio = %q, want it to contain %q", formatAudio, want)
+		}
+	}
 }
 
 func TestQualityFormat(t *testing.T) {
