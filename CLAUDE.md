@@ -39,6 +39,8 @@ just docker-logs  # tail bot logs
 | `WATCH_AUTO_DOWNLOAD` | no | `false` | `true` = send video file immediately on new video, `false` = send notification with Download button |
 | `BROWSER_USER_AGENT` | no | Chrome 131 UA | Browser User-Agent for Threads requests (only used with `default` engine) |
 | `PLUGINS_CONFIG` | no | — | Path to `plugins.yml` for plugin extensibility |
+| `SENTRY_DSN` | no | — | Sentry DSN; empty disables error reporting |
+| `SENTRY_ENVIRONMENT` | no | — | Environment tag for Sentry events (e.g. `production`) |
 
 Copy `.env-example` to `.env` to get started.
 

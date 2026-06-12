@@ -22,6 +22,7 @@ import (
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/threads"
 	ytdlpdl "gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/ytdlp"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/gdrive"
+	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/observability"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/plugin"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/store/sqlite"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/telegram"
@@ -40,9 +41,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	// ── Sentry error reporting ────────────────────────────────────────────────
+	// Init before the logger so the slog handler can forward errors.
+	flushSentry, err := observability.InitSentry(observability.SentryOptions{
+		DSN:         cfg.SentryDSN,
+		Environment: cfg.SentryEnvironment,
+		Release:     "multiverse-bot@" + Version,
+	})
+	if err != nil {
+		slog.Error("failed to init sentry", "error", err)
+		os.Exit(1)
+	}
+	defer flushSentry()
+
+	var logHandler slog.Handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: cfg.LogLevel,
-	}))
+	})
+	if cfg.SentryDSN != "" {
+		logHandler = observability.NewSlogHandler(logHandler)
+	}
+	log := slog.New(logHandler)
 
 	log.Info("starting multiverse-bot",
 		"version", Version,
@@ -230,15 +248,25 @@ func main() {
 	defer stop()
 
 	g, gCtx := errgroup.WithContext(ctx)
-	g.Go(func() error { return watchSvc.Run(gCtx) })
+	g.Go(func() error {
+		defer observability.RecoverAndReport()
+		return watchSvc.Run(gCtx)
+	})
 	if storyWatchSvc != nil {
-		g.Go(func() error { return storyWatchSvc.Run(gCtx) })
+		g.Go(func() error {
+			defer observability.RecoverAndReport()
+			return storyWatchSvc.Run(gCtx)
+		})
 	}
 	if postWatchSvc != nil {
-		g.Go(func() error { return postWatchSvc.Run(gCtx) })
+		g.Go(func() error {
+			defer observability.RecoverAndReport()
+			return postWatchSvc.Run(gCtx)
+		})
 	}
 
 	go func() {
+		defer observability.RecoverAndReport()
 		log.Info("bot started")
 		bot.NotifyAdminsStarted(Version)
 		bot.Start()

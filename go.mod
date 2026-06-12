@@ -3,6 +3,7 @@ module gitlab.com/tiny-services/multiverse-bot
 go 1.26.0
 
 require (
+	github.com/getsentry/sentry-go v0.46.2
 	github.com/joho/godotenv v1.5.1
 	github.com/lrstanley/go-ytdlp v1.3.1
 	github.com/refraction-networking/utls v1.8.2

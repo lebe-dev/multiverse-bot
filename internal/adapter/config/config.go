@@ -43,6 +43,10 @@ type Config struct {
 	// Plugins
 	PluginsConfig string // path to plugins.yml
 
+	// Sentry error reporting (disabled when DSN is empty).
+	SentryDSN         string
+	SentryEnvironment string
+
 	// Debug mode — verbose error details sent to admin chats.
 	Debug bool
 
@@ -93,6 +97,9 @@ func Load() (*Config, error) {
 		AdminChatsFile:     getEnvOrDefault("ADMIN_CHATS_FILE", "./data/admin_chats.json"),
 
 		PluginsConfig: os.Getenv("PLUGINS_CONFIG"),
+
+		SentryDSN:         os.Getenv("SENTRY_DSN"),
+		SentryEnvironment: os.Getenv("SENTRY_ENVIRONMENT"),
 
 		Debug: parseBool(os.Getenv("DEBUG")),
 
