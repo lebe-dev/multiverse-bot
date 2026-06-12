@@ -251,7 +251,7 @@ func (b *Bot) handleText(c tele.Context) error {
 			if errors.As(err, &pe) {
 				return b.handlePluginURL(pe.c, pe.client, pe.name, pe.url, pe.pattern)
 			}
-			return b.handleError(c, err)
+			return b.handleError(c, url, err)
 		}
 
 		sizeMB := result.fileSize / (1024 * 1024)
@@ -341,7 +341,7 @@ func (b *Bot) handleMediaURL(c tele.Context, url string, st UserSettings) error 
 				return b.handlePluginURL(c, pluginClient, pluginName, url, matchedPattern)
 			}
 		}
-		return b.handleError(c, err)
+		return b.handleError(c, url, err)
 	}
 	defer cleanup()
 
@@ -695,7 +695,7 @@ func (b *Bot) handleSaveCommand(c tele.Context) error {
 	if err != nil {
 		b.deleteMsg(statusMsg)
 		b.log.Error("best download failed", "url", url, "error", err)
-		return b.handleError(c, err)
+		return b.handleError(c, url, err)
 	}
 	defer func() { _ = os.RemoveAll(filepath.Dir(best.FilePath)) }()
 
@@ -751,7 +751,7 @@ func (b *Bot) handleAudioCommand(c tele.Context) error {
 	if err != nil {
 		b.deleteMsg(statusMsg)
 		b.log.Error("audio download failed", "url", url, "error", err)
-		return b.handleError(c, err)
+		return b.handleError(c, url, err)
 	}
 	defer func() { _ = os.RemoveAll(filepath.Dir(video.FilePath)) }()
 
@@ -934,30 +934,31 @@ func freeDiskBytes(path string) (uint64, error) {
 
 // ── Error handling ────────────────────────────────────────────────────────────
 
-func (b *Bot) handleError(c tele.Context, err error) error {
+func (b *Bot) handleError(c tele.Context, url string, err error) error {
 	showDebug := b.debug && b.IsAdmin(c.Sender().Username)
 	user := c.Sender().Username
 	userID := c.Sender().ID
+	platform := b.service.DetectPlatform(url).String()
 	switch {
 	case errors.Is(err, domain.ErrUnsupportedPlatform):
-		b.log.Warn("unsupported platform", "user", user, "user_id", userID)
+		b.log.Warn("unsupported platform", "user", user, "user_id", userID, "url", url)
 		platforms := "YouTube, X (Twitter), Threads"
 		if b.instagramEnabled {
 			platforms = "YouTube, Instagram, X (Twitter), Threads"
 		}
 		return c.Send(fmt.Sprintf("Платформа не поддерживается. Поддерживаются: %s.", platforms))
 	case errors.Is(err, domain.ErrVideoTooLarge):
-		b.log.Warn("video too large", "user", user, "user_id", userID)
+		b.log.Warn("video too large", "user", user, "user_id", userID, "url", url, "platform", platform)
 		return c.Send("Видео слишком большое.")
 	case errors.Is(err, domain.ErrDownloadFailed):
-		b.log.Error("download failed", "user", user, "user_id", userID, "error", err)
+		b.log.Error("download failed", "user", user, "user_id", userID, "url", url, "platform", platform, "error", err)
 		msg := "Ошибка загрузки. Видео может быть закрыто, приватным или ссылка повреждена."
 		if showDebug {
 			msg += fmt.Sprintf("\n\n<code>%v</code>", escapeHTML(err.Error()))
 		}
 		return c.Send(msg, &tele.SendOptions{ParseMode: tele.ModeHTML})
 	default:
-		b.log.Error("unexpected error", "user", user, "user_id", userID, "error", err)
+		b.log.Error("unexpected error", "user", user, "user_id", userID, "url", url, "platform", platform, "error", err)
 		msg := "Что-то пошло не так. Попробуйте ещё раз."
 		if showDebug {
 			msg += fmt.Sprintf("\n\n<code>%v</code>", escapeHTML(err.Error()))

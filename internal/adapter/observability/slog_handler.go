@@ -7,9 +7,26 @@ import (
 	"github.com/getsentry/sentry-go"
 )
 
-// errorAttrKey is the conventional slog attribute key the codebase uses to
-// attach the underlying error (e.g. log.Error("...", "error", err)).
-const errorAttrKey = "error"
+// Conventional slog attribute keys the codebase uses. The handler gives some of
+// them special meaning when building a Sentry event so issues are searchable and
+// readable instead of showing up as a context-less "Unknown error".
+const (
+	// errorAttrKey carries the underlying error (e.g. log.Error("...", "error", err)).
+	errorAttrKey = "error"
+	// userAttrKey / userIDAttrKey populate Sentry's User panel.
+	userAttrKey   = "user"
+	userIDAttrKey = "user_id"
+)
+
+// tagAttrKeys lists low-cardinality attributes that are promoted to Sentry tags
+// (shown in the issue header and usable for search/filtering) in addition to
+// living in the "log" context. URLs are intentionally left out — they are high
+// cardinality and stay in the context only.
+var tagAttrKeys = map[string]bool{
+	"platform": true,
+	"plugin":   true,
+	"engine":   true,
+}
 
 // SlogHandler wraps another slog.Handler and forwards records at error level
 // (or above) to Sentry as exception events. All records are still passed to the
@@ -57,20 +74,32 @@ func (h *SlogHandler) capture(ctx context.Context, r slog.Record) {
 
 	var capturedErr error
 	logCtx := sentry.Context{}
+	tags := map[string]string{}
+	var user sentry.User
 
-	for _, a := range h.attrs {
-		if err, ok := asError(a); ok {
-			capturedErr = err
-			continue
+	collect := func(a slog.Attr) {
+		switch a.Key {
+		case errorAttrKey:
+			if err, ok := a.Value.Any().(error); ok {
+				capturedErr = err
+				return
+			}
+		case userAttrKey:
+			user.Username = a.Value.String()
+		case userIDAttrKey:
+			user.ID = a.Value.String()
+		}
+		if tagAttrKeys[a.Key] {
+			tags[a.Key] = a.Value.String()
 		}
 		logCtx[a.Key] = a.Value.Any()
 	}
+
+	for _, a := range h.attrs {
+		collect(a)
+	}
 	r.Attrs(func(a slog.Attr) bool {
-		if err, ok := asError(a); ok {
-			capturedErr = err
-			return true
-		}
-		logCtx[a.Key] = a.Value.Any()
+		collect(a)
 		return true
 	})
 
@@ -79,6 +108,20 @@ func (h *SlogHandler) capture(ctx context.Context, r slog.Record) {
 	hub.WithScope(func(scope *sentry.Scope) {
 		scope.SetLevel(sentry.LevelError)
 		scope.SetContext("log", logCtx)
+		// The log message becomes the transaction so the event has a non-nil
+		// culprit and a readable title (e.g. "download failed") instead of the
+		// SDK's default "Unknown error". v0.46 has no scope.SetTransaction, so we
+		// set the field on the outgoing event directly.
+		scope.AddEventProcessor(func(event *sentry.Event, _ *sentry.EventHint) *sentry.Event {
+			event.Transaction = r.Message
+			return event
+		})
+		if len(tags) > 0 {
+			scope.SetTags(tags)
+		}
+		if user.ID != "" || user.Username != "" {
+			scope.SetUser(user)
+		}
 
 		if capturedErr != nil {
 			hub.CaptureException(capturedErr)
@@ -86,12 +129,4 @@ func (h *SlogHandler) capture(ctx context.Context, r slog.Record) {
 		}
 		hub.CaptureMessage(r.Message)
 	})
-}
-
-func asError(a slog.Attr) (error, bool) {
-	if a.Key != errorAttrKey {
-		return nil, false
-	}
-	err, ok := a.Value.Any().(error)
-	return err, ok
 }

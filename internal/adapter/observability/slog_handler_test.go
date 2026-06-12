@@ -60,7 +60,13 @@ func TestSlogHandler_CaptureException(t *testing.T) {
 	log, ctx, transport := newTestLogger(t)
 
 	sentinel := errors.New("boom")
-	log.ErrorContext(ctx, "download failed", "error", sentinel, "url", "https://x")
+	log.ErrorContext(ctx, "download failed",
+		"error", sentinel,
+		"url", "https://x",
+		"platform", "youtube",
+		"user", "alice",
+		"user_id", int64(42),
+	)
 
 	events := transport.captured()
 	if len(events) != 1 {
@@ -76,6 +82,18 @@ func TestSlogHandler_CaptureException(t *testing.T) {
 	}
 	if logCtx, ok := e.Contexts["log"]; !ok || logCtx["url"] != "https://x" {
 		t.Errorf("expected log context with url attr, got %+v", e.Contexts["log"])
+	}
+	if e.Transaction != "download failed" {
+		t.Errorf("expected transaction set to message, got %q", e.Transaction)
+	}
+	if e.Tags["platform"] != "youtube" {
+		t.Errorf("expected platform tag, got %+v", e.Tags)
+	}
+	if _, isTag := e.Tags["url"]; isTag {
+		t.Errorf("url must stay out of tags (high cardinality), got %+v", e.Tags)
+	}
+	if e.User.Username != "alice" || e.User.ID != "42" {
+		t.Errorf("expected user populated, got %+v", e.User)
 	}
 }
 
