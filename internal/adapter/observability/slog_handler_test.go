@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -94,6 +95,35 @@ func TestSlogHandler_CaptureException(t *testing.T) {
 	}
 	if e.User.Username != "alice" || e.User.ID != "42" {
 		t.Errorf("expected user populated, got %+v", e.User)
+	}
+	wantFP := []string{"download failed", "youtube"}
+	if !reflect.DeepEqual(e.Fingerprint, wantFP) {
+		t.Errorf("expected fingerprint %v, got %v", wantFP, e.Fingerprint)
+	}
+}
+
+func TestSlogHandler_FingerprintSeparatesCategories(t *testing.T) {
+	log, ctx, transport := newTestLogger(t)
+
+	// Same stack trace (both go through this handler), different log messages and
+	// platforms: each must get its own fingerprint instead of collapsing into one
+	// "Unknown error" issue.
+	log.ErrorContext(ctx, "download failed", "error", errors.New("boom"), "platform", "youtube")
+	log.ErrorContext(ctx, "send failed", "error", errors.New("boom"), "platform", "instagram")
+
+	events := transport.captured()
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(events))
+	}
+	fp0, fp1 := events[0].Fingerprint, events[1].Fingerprint
+	if reflect.DeepEqual(fp0, fp1) {
+		t.Fatalf("expected distinct fingerprints, both were %v", fp0)
+	}
+	if want := []string{"download failed", "youtube"}; !reflect.DeepEqual(fp0, want) {
+		t.Errorf("event 0: expected fingerprint %v, got %v", want, fp0)
+	}
+	if want := []string{"send failed", "instagram"}; !reflect.DeepEqual(fp1, want) {
+		t.Errorf("event 1: expected fingerprint %v, got %v", want, fp1)
 	}
 }
 

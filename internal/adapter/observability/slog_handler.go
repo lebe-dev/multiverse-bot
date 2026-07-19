@@ -3,6 +3,7 @@ package observability
 import (
 	"context"
 	"log/slog"
+	"sort"
 
 	"github.com/getsentry/sentry-go"
 )
@@ -108,6 +109,13 @@ func (h *SlogHandler) capture(ctx context.Context, r slog.Record) {
 	hub.WithScope(func(scope *sentry.Scope) {
 		scope.SetLevel(sentry.LevelError)
 		scope.SetContext("log", logCtx)
+		// Group by the log message plus low-cardinality tags instead of by stack
+		// trace. CaptureException records the stack at the point of capture, which
+		// for every slog-driven event is this same handler — so the SDK's default
+		// grouping collapses unrelated errors ("download failed", "send failed", …)
+		// into a single "Unknown error" issue. An explicit fingerprint keeps each
+		// failure category as its own searchable issue.
+		scope.SetFingerprint(fingerprint(r.Message, tags))
 		// The log message becomes the transaction so the event has a non-nil
 		// culprit and a readable title (e.g. "download failed") instead of the
 		// SDK's default "Unknown error". v0.46 has no scope.SetTransaction, so we
@@ -129,4 +137,20 @@ func (h *SlogHandler) capture(ctx context.Context, r slog.Record) {
 		}
 		hub.CaptureMessage(r.Message)
 	})
+}
+
+// fingerprint builds a stable Sentry grouping key from the log message and the
+// promoted (low-cardinality) tags. Tags are appended in a deterministic order so
+// the same message+context always lands in the same issue.
+func fingerprint(message string, tags map[string]string) []string {
+	fp := []string{message}
+	keys := make([]string, 0, len(tags))
+	for k := range tags {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		fp = append(fp, tags[k])
+	}
+	return fp
 }
