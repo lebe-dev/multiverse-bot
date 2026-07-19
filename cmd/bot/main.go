@@ -32,7 +32,12 @@ import (
 	"gitlab.com/tiny-services/multiverse-bot/internal/usecase"
 )
 
-const Version = "0.13.0"
+// Version and Build are injected at build time via -ldflags "-X main.Version=... -X main.Build=...".
+// Version is read from the VERSION file, Build is the short git commit hash.
+var (
+	Version = "dev"
+	Build   = "unknown"
+)
 
 func main() {
 	cfg, err := config.Load()
@@ -64,6 +69,7 @@ func main() {
 
 	log.Info("starting multiverse-bot",
 		"version", Version,
+		"build", Build,
 		"tg_limit_mb", cfg.TGLimit/(1024*1024),
 		"debug", cfg.Debug,
 	)

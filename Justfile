@@ -1,10 +1,15 @@
-# Version from source code
+# Version from VERSION file, build number from git short commit hash
 
-app_version := `grep 'const Version = ' cmd/bot/main.go | cut -d'"' -f2`
+app_version := `cat VERSION`
+app_build := `git rev-parse --short HEAD 2>/dev/null || echo unknown`
 image := "tinyops/multiverse-bot"
 
 default:
     @just --list
+
+bump-deps:
+    go get -u ./...
+    go mod tidy
 
 ########################################
 # LINT & TEST
@@ -17,7 +22,7 @@ test name="./...":
     go test -v -race {{ name }}
 
 build: lint test
-    go build -ldflags="-X main.Version={{ app_version }}" -o bin/multiverse-bot ./cmd/bot
+    go build -ldflags="-X main.Version={{ app_version }} -X main.Build={{ app_build }}" -o bin/multiverse-bot ./cmd/bot
 
 ########################################
 # DEV
@@ -37,7 +42,10 @@ stop-dev-image:
 ########################################
 
 build-release-image: lint test
-    docker build --progress=plain --platform=linux/amd64 -t {{ image }}:{{ app_version }} -t {{ image }}:latest .
+    docker build --progress=plain --platform=linux/amd64 \
+        --build-arg VERSION={{ app_version }} \
+        --build-arg BUILD={{ app_build }} \
+        -t {{ image }}:{{ app_version }} -t {{ image }}:latest .
 
 release: build-release-image
     docker push {{ image }}:{{ app_version }}
