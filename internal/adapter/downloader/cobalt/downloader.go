@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -51,10 +52,13 @@ type cobaltRequest struct {
 }
 
 type cobaltResponse struct {
-	Status string       `json:"status"`
-	URL    string       `json:"url"`
-	Picker []pickerItem `json:"picker"`
-	Error  *struct {
+	Status string `json:"status"`
+	URL    string `json:"url"`
+	// Filename is returned alongside tunnel/redirect responses and is the only
+	// hint about the media kind cobalt gives us.
+	Filename string       `json:"filename"`
+	Picker   []pickerItem `json:"picker"`
+	Error    *struct {
 		Code string `json:"code"`
 	} `json:"error"`
 }
@@ -130,29 +134,66 @@ func (d *Downloader) DownloadMedia(ctx context.Context, url string) (*domain.Med
 	switch cr.Status {
 	case "picker":
 		return d.downloadPicker(ctx, url, cr.Picker)
-	case "stream", "redirect":
-		if cr.URL == "" {
-			return nil, fmt.Errorf("%w: cobalt returned no URL (status: %s)", domain.ErrDownloadFailed, cr.Status)
-		}
-		video, err := dlutil.SaveToTemp("multiverse-cobalt-*", url, func(f *os.File) error {
-			return downloadToFile(ctx, d.httpClient, cr.URL, f)
-		})
-		if err != nil {
-			return nil, err
-		}
-		return &domain.MediaResult{
-			Items: []domain.MediaItem{{
-				Type:     domain.MediaVideo,
-				FilePath: video.FilePath,
-				Size:     video.Size,
-				URL:      cr.URL,
-			}},
-			Title: video.Title,
-			URL:   url,
-		}, nil
+	// "tunnel" is what cobalt v10+ returns where older versions said "stream".
+	case "tunnel", "stream", "redirect":
+		return d.downloadSingle(ctx, url, cr)
 	default:
 		return nil, fmt.Errorf("%w: cobalt: unexpected status %s", domain.ErrDownloadFailed, cr.Status)
 	}
+}
+
+// downloadSingle fetches the single media file cobalt pointed us at, keeping
+// the extension cobalt reported so photos are not passed off as videos.
+func (d *Downloader) downloadSingle(ctx context.Context, sourceURL string, cr *cobaltResponse) (*domain.MediaResult, error) {
+	if cr.URL == "" {
+		return nil, fmt.Errorf("%w: cobalt returned no URL (status: %s)", domain.ErrDownloadFailed, cr.Status)
+	}
+
+	mediaType, ext := mediaKindFromFilename(cr.Filename)
+
+	tmpDir, err := os.MkdirTemp("", "multiverse-cobalt-*")
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
+	}
+
+	filePath := filepath.Join(tmpDir, "media"+ext)
+	if err := downloadToPath(ctx, d.httpClient, cr.URL, filePath); err != nil {
+		_ = os.RemoveAll(tmpDir)
+		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
+	}
+
+	info, err := os.Stat(filePath)
+	if err != nil {
+		_ = os.RemoveAll(tmpDir)
+		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
+	}
+
+	return &domain.MediaResult{
+		Items: []domain.MediaItem{{
+			Type:     mediaType,
+			FilePath: filePath,
+			Size:     info.Size(),
+			URL:      cr.URL,
+		}},
+		URL: sourceURL,
+	}, nil
+}
+
+var photoExtensions = map[string]bool{
+	".jpg": true, ".jpeg": true, ".png": true, ".webp": true, ".gif": true, ".heic": true,
+}
+
+// mediaKindFromFilename derives the media type and file extension from the
+// filename cobalt reports. Defaults to video/.mp4 when there is nothing to go on.
+func mediaKindFromFilename(filename string) (domain.MediaType, string) {
+	ext := strings.ToLower(filepath.Ext(filename))
+	if ext == "" {
+		return domain.MediaVideo, ".mp4"
+	}
+	if photoExtensions[ext] {
+		return domain.MediaPhoto, ext
+	}
+	return domain.MediaVideo, ext
 }
 
 func (d *Downloader) downloadPicker(ctx context.Context, sourceURL string, items []pickerItem) (*domain.MediaResult, error) {

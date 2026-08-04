@@ -12,12 +12,13 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
 	utls "github.com/refraction-networking/utls"
+
+	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/threadsurl"
 )
 
 // video represents an extracted video with its metadata.
@@ -88,7 +89,7 @@ func newClient(userAgent string) *client {
 
 // extract fetches the Threads post page and returns found videos.
 func (c *client) extract(ctx context.Context, postURL string) ([]video, error) {
-	postURL, err := normalizeURL(postURL)
+	postURL, err := threadsurl.Resolve(ctx, c.pageClient, c.userAgent, postURL)
 	if err != nil {
 		return nil, fmt.Errorf("threads: invalid URL: %w", err)
 	}
@@ -188,52 +189,6 @@ func (c *client) downloadVideo(ctx context.Context, videoURL string, w io.Writer
 
 	_, err = io.Copy(w, resp.Body)
 	return err
-}
-
-// --- URL handling ---
-
-// normalizeURL validates and normalizes a Threads post URL to a canonical form.
-func normalizeURL(rawURL string) (string, error) {
-	rawURL = strings.TrimSpace(rawURL)
-
-	if !strings.Contains(rawURL, "://") {
-		rawURL = "https://" + rawURL
-	}
-
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return "", fmt.Errorf("cannot parse URL: %w", err)
-	}
-
-	host := strings.ToLower(parsed.Hostname())
-	if host != "www.threads.com" && host != "threads.com" &&
-		host != "www.threads.net" && host != "threads.net" {
-		return "", fmt.Errorf("not a Threads URL: %s", host)
-	}
-
-	path := strings.TrimRight(parsed.Path, "/")
-
-	// Preserve xmt query param — Meta may use the share token as a
-	// legitimacy signal.
-	query := ""
-	if xmt := parsed.Query().Get("xmt"); xmt != "" {
-		query = "?xmt=" + url.QueryEscape(xmt)
-	}
-
-	// Short URL format /t/CODE — keep as-is, HTTP client follows redirects.
-	if strings.HasPrefix(path, "/t/") {
-		return fmt.Sprintf("https://www.threads.com%s%s", path, query), nil
-	}
-
-	// /@user/post/CODE format.
-	parts := strings.Split(path, "/")
-	if len(parts) < 4 || parts[2] != "post" || !strings.HasPrefix(parts[1], "@") {
-		return "", fmt.Errorf("unexpected URL path: %s", path)
-	}
-
-	username := parts[1]
-	code := parts[3]
-	return fmt.Sprintf("https://www.threads.com/%s/post/%s%s", username, code, query), nil
 }
 
 // --- SSR data parsing ---

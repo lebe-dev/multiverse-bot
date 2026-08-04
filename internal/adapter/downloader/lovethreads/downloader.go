@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/dlutil"
+	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/threadsurl"
 	"gitlab.com/tiny-services/multiverse-bot/internal/domain"
 )
 
@@ -31,8 +32,15 @@ func (d *Downloader) DownloadMedia(_ context.Context, _ string) (*domain.MediaRe
 }
 
 func (d *Downloader) Download(ctx context.Context, url string) (*domain.Video, error) {
-	d.log.Debug("extracting lovethreads video", "url", url)
-	urls, err := d.client.extractVideoURLs(ctx, url)
+	// lovethreads.net rejects /share/ links and app-style root links, so the
+	// URL has to be canonicalized (and possibly redirect-resolved) first.
+	postURL, err := threadsurl.Resolve(ctx, d.client.httpClient, "", url)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
+	}
+
+	d.log.Debug("extracting lovethreads video", "url", postURL)
+	urls, err := d.client.extractVideoURLs(ctx, postURL)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrDownloadFailed, err)
 	}

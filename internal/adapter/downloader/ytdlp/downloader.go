@@ -16,7 +16,7 @@ import (
 )
 
 // format720 downloads the best quality that fits within 720p.
-const format720 = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]"
+var format720 = qualityFormat("720p")
 
 // formatBest downloads the highest available quality (for Google Drive archive).
 const formatBest = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
@@ -36,11 +36,13 @@ func New(execPath string, cookiePath func(url string) string, log *slog.Logger) 
 		execPath:   execPath,
 		cookiePath: cookiePath,
 		log:        log,
+		// Threads is deliberately absent: yt-dlp has no Threads extractor, so
+		// it only burns time on the generic one and then masks the real error
+		// from the Threads backends with its own "Unsupported URL".
 		supported: map[domain.Platform]bool{
 			domain.PlatformYouTube:   true,
 			domain.PlatformInstagram: true,
 			domain.PlatformTwitter:   true,
-			domain.PlatformThreads:   true,
 		},
 	}
 }
@@ -76,17 +78,41 @@ func (d *Downloader) DownloadAudio(ctx context.Context, url string) (*domain.Vid
 }
 
 // qualityFormat returns the yt-dlp format selector for the given quality level.
+// Falls back to 720p for unknown values.
 func qualityFormat(quality string) string {
 	switch quality {
 	case "360p":
-		return "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best[height<=360]"
+		return formatUpTo(360)
 	case "480p":
-		return "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]"
+		return formatUpTo(480)
 	case "1080p":
-		return "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best[height<=1080]"
+		return formatUpTo(1080)
 	default: // "720p"
-		return format720
+		return formatUpTo(720)
 	}
+}
+
+// formatUpTo builds a yt-dlp format selector capped at the given size.
+//
+// The cap has to be checked against width as well as height: vertical media
+// (Reels, Shorts, Threads posts) is 720x1280, so a height-only cap rejects
+// every format and yt-dlp fails with "Requested format is not available".
+// Instagram additionally serves progressive MP4s with unknown resolution,
+// which no dimension filter can match — hence the unfiltered fallbacks at the
+// end. H.264 is preferred throughout because Telegram plays it everywhere;
+// VP9/AV1 is only accepted as a last resort before giving up on the cap.
+func formatUpTo(maxSize int) string {
+	return fmt.Sprintf(
+		"bestvideo[height<=%[1]d][ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/"+
+			"bestvideo[width<=%[1]d][ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/"+
+			"best[height<=%[1]d][ext=mp4]/"+
+			"best[width<=%[1]d][ext=mp4]/"+
+			"best[ext=mp4]/"+
+			"bestvideo[height<=%[1]d]+bestaudio/"+
+			"bestvideo[width<=%[1]d]+bestaudio/"+
+			"best",
+		maxSize,
+	)
 }
 
 // AnalyzeFormats runs yt-dlp --dump-json and returns a compact format summary
