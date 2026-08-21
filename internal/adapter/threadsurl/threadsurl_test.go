@@ -5,7 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/url"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -76,6 +76,11 @@ func TestCanonical(t *testing.T) {
 			name:    "share URL needs redirect",
 			input:   "https://www.threads.com/share/_1-9exY8p/",
 			wantErr: ErrNeedsRedirect,
+		},
+		{
+			name:    "error page means the post cannot be shown",
+			input:   "https://www.threads.com/?error=invalid_post",
+			wantErr: ErrPostUnavailable,
 		},
 		{
 			name:    "root URL without media ids",
@@ -162,42 +167,55 @@ func TestMediaIDFromQuery(t *testing.T) {
 
 func TestResolve(t *testing.T) {
 	const shareURL = "https://www.threads.com/share/_1-9exY8p/"
+	const postURL = "https://www.threads.com/@user/post/ABC123?xmt=tok&slof=1"
+	const errorURL = "https://www.threads.com/?error=invalid_post"
 
 	tests := []struct {
-		name     string
-		finalURL string
-		want     string
-		wantErr  bool
+		name         string
+		redirects    map[string]string
+		want         string
+		wantErr      error
+		wantNotFetch string
 	}{
 		{
-			name:     "redirect to post URL",
-			finalURL: "https://www.threads.com/@user/post/ABC123?xmt=tok&slof=1",
-			want:     "https://www.threads.com/@user/post/ABC123?xmt=tok",
+			name:      "redirect to post URL",
+			redirects: map[string]string{shareURL: postURL},
+			want:      "https://www.threads.com/@user/post/ABC123?xmt=tok",
 		},
 		{
-			name:     "redirect to root with injected_media_ids",
-			finalURL: "https://www.threads.com/?injected_media_ids=%5B%223954841119435301839%22%5D",
-			want:     "https://www.threads.com/t/DbiawtjDKPP",
+			name:      "post URL bounced on to the error page",
+			redirects: map[string]string{shareURL: postURL, postURL: errorURL},
+			// The post URL is taken from the middle of the chain, so the
+			// error page is never even requested.
+			want:         "https://www.threads.com/@user/post/ABC123?xmt=tok",
+			wantNotFetch: errorURL,
 		},
 		{
-			name:     "redirect leads nowhere useful",
-			finalURL: "https://www.threads.com/",
-			wantErr:  true,
+			name:      "redirect to root with injected_media_ids",
+			redirects: map[string]string{shareURL: "https://www.threads.com/?injected_media_ids=%5B%223954841119435301839%22%5D"},
+			want:      "https://www.threads.com/t/DbiawtjDKPP",
+		},
+		{
+			name:      "share link resolves straight to the error page",
+			redirects: map[string]string{shareURL: errorURL},
+			wantErr:   ErrPostUnavailable,
+		},
+		{
+			name:      "redirect leads nowhere useful",
+			redirects: map[string]string{shareURL: "https://www.threads.com/"},
+			wantErr:   ErrUnsupportedURL,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var requested string
-			doer := doerFunc(func(r *http.Request) (*http.Response, error) {
-				requested = r.URL.String()
-				return redirectedResponse(t, r, tt.finalURL), nil
-			})
+			threads := &fakeThreads{redirects: tt.redirects}
+			client := &http.Client{Transport: threads}
 
-			got, err := Resolve(context.Background(), doer, "", shareURL)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("expected error, got %q", got)
+			got, err := Resolve(context.Background(), client, "", shareURL)
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("error = %v, want %v (got %q)", err, tt.wantErr, got)
 				}
 				return
 			}
@@ -207,20 +225,37 @@ func TestResolve(t *testing.T) {
 			if got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
-			if requested != shareURL {
-				t.Errorf("requested %q, want %q", requested, shareURL)
+			if len(threads.requested) == 0 || threads.requested[0] != shareURL {
+				t.Errorf("requested %v, want %q first", threads.requested, shareURL)
+			}
+			if tt.wantNotFetch != "" && slices.Contains(threads.requested, tt.wantNotFetch) {
+				t.Errorf("requested %q, want the redirect chain to stop earlier", tt.wantNotFetch)
 			}
 		})
 	}
 }
 
+func TestResolveStopsAfterTooManyRedirects(t *testing.T) {
+	const shareURL = "https://www.threads.com/share/_1-9exY8p/"
+
+	threads := &fakeThreads{redirects: map[string]string{shareURL: shareURL}}
+	client := &http.Client{Transport: threads}
+
+	if _, err := Resolve(context.Background(), client, "", shareURL); err == nil {
+		t.Fatal("expected an error for a redirect loop")
+	}
+	if len(threads.requested) > maxRedirects+1 {
+		t.Errorf("made %d requests, want at most %d", len(threads.requested), maxRedirects+1)
+	}
+}
+
 func TestResolveSkipsNetworkForCanonicalURL(t *testing.T) {
-	doer := doerFunc(func(*http.Request) (*http.Response, error) {
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		t.Error("Resolve should not perform a request for an already canonical URL")
 		return nil, errors.New("unexpected request")
-	})
+	})}
 
-	got, err := Resolve(context.Background(), doer, "", "https://www.threads.com/@user/post/ABC123")
+	got, err := Resolve(context.Background(), client, "", "https://www.threads.com/@user/post/ABC123")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -230,33 +265,42 @@ func TestResolveSkipsNetworkForCanonicalURL(t *testing.T) {
 }
 
 func TestResolveRejectsNonThreadsURL(t *testing.T) {
-	doer := doerFunc(func(*http.Request) (*http.Response, error) {
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		t.Error("Resolve should not perform a request for a non-Threads URL")
 		return nil, errors.New("unexpected request")
-	})
+	})}
 
-	if _, err := Resolve(context.Background(), doer, "", "https://instagram.com/p/ABC123"); !errors.Is(err, ErrUnsupportedURL) {
+	if _, err := Resolve(context.Background(), client, "", "https://instagram.com/p/ABC123"); !errors.Is(err, ErrUnsupportedURL) {
 		t.Fatalf("error = %v, want %v", err, ErrUnsupportedURL)
 	}
 }
 
-// redirectedResponse mimics what net/http returns after following redirects:
-// resp.Request.URL points at the final location.
-func redirectedResponse(t *testing.T, req *http.Request, finalURL string) *http.Response {
-	t.Helper()
-	final, err := url.Parse(finalURL)
-	if err != nil {
-		t.Fatalf("bad final URL %q: %v", finalURL, err)
-	}
-	finalReq := req.Clone(req.Context())
-	finalReq.URL = final
-	return &http.Response{
-		StatusCode: http.StatusOK,
-		Body:       io.NopCloser(strings.NewReader("")),
-		Request:    finalReq,
-	}
+// fakeThreads answers with the canned 302 chain Meta serves for share links,
+// so redirect handling can be exercised without touching the network.
+type fakeThreads struct {
+	redirects map[string]string
+	requested []string
 }
 
-type doerFunc func(*http.Request) (*http.Response, error)
+func (f *fakeThreads) RoundTrip(req *http.Request) (*http.Response, error) {
+	requestURL := req.URL.String()
+	f.requested = append(f.requested, requestURL)
 
-func (f doerFunc) Do(r *http.Request) (*http.Response, error) { return f(r) }
+	header := http.Header{}
+	status := http.StatusOK
+	if location, ok := f.redirects[requestURL]; ok {
+		status = http.StatusFound
+		header.Set("Location", location)
+	}
+
+	return &http.Response{
+		StatusCode: status,
+		Header:     header,
+		Body:       io.NopCloser(strings.NewReader("")),
+		Request:    req,
+	}, nil
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

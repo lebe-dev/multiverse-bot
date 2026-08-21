@@ -153,9 +153,12 @@ func (c *client) fetchPage(ctx context.Context, pageURL string) (string, error) 
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// Meta redirects blocked requests to /?error=invalid_post with 200 OK.
-	if resp.Request != nil && resp.Request.URL.Query().Get("error") != "" {
-		return "", fmt.Errorf("blocked by Meta (redirected to %s)", resp.Request.URL.String())
+	// Meta answers with 200 OK after redirecting to /?error=... when the post
+	// cannot be shown to this client.
+	if resp.Request != nil {
+		if reason := resp.Request.URL.Query().Get("error"); reason != "" {
+			return "", fmt.Errorf("%w: %s", threadsurl.ErrPostUnavailable, reason)
+		}
 	}
 
 	if resp.StatusCode != http.StatusOK {

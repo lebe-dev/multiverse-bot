@@ -11,6 +11,12 @@
 // /share/ links outright, and the root URL carries the post only as a numeric
 // media id. That id is the shortcode in base64url disguise, so it can be
 // converted back into a /t/CODE short link.
+//
+// Meta does not always stop at the post URL: when the post is deleted,
+// private, or viewable only to logged-in users, it redirects one hop further
+// to https://www.threads.com/?error=invalid_post. The post URL from the
+// middle of the chain is still the answer we want, so every hop is inspected
+// and the redirect chain is abandoned as soon as one of them canonicalizes.
 package threadsurl
 
 import (
@@ -32,18 +38,19 @@ const shortcodeAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0
 const defaultUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
 	"AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
+// maxRedirects caps how many hops a share link may take before giving up.
+const maxRedirects = 10
+
 var (
 	// ErrUnsupportedURL means the URL is not a Threads post URL.
 	ErrUnsupportedURL = errors.New("threads: unsupported URL")
 	// ErrNeedsRedirect means the URL can only be canonicalized by following
 	// its HTTP redirect — see Resolve.
 	ErrNeedsRedirect = errors.New("threads: URL requires redirect resolution")
+	// ErrPostUnavailable means Threads answered with its error page: the post
+	// is deleted, private, or viewable only to logged-in users.
+	ErrPostUnavailable = errors.New("threads: post is unavailable (deleted, private, or requires login)")
 )
-
-// Doer is the subset of *http.Client used to follow share-link redirects.
-type Doer interface {
-	Do(*http.Request) (*http.Response, error)
-}
 
 // Canonical rewrites a Threads URL to canonical form without touching the
 // network. It returns ErrNeedsRedirect for /share/ links.
@@ -90,6 +97,9 @@ func Canonical(rawURL string) (string, error) {
 		if code, ok := shortcodeFromMediaID(mediaIDFromParam(parsed.Query().Get("injected_media_ids"))); ok {
 			return "https://www.threads.com/t/" + code + query, nil
 		}
+		if reason := parsed.Query().Get("error"); reason != "" {
+			return "", fmt.Errorf("%w: %s", ErrPostUnavailable, reason)
+		}
 	}
 
 	// Share links carry an opaque token that only Meta can resolve.
@@ -102,7 +112,7 @@ func Canonical(rawURL string) (string, error) {
 
 // Resolve canonicalizes rawURL, following the redirect for /share/ links.
 // No request is made when the URL can be canonicalized offline.
-func Resolve(ctx context.Context, doer Doer, userAgent, rawURL string) (string, error) {
+func Resolve(ctx context.Context, client *http.Client, userAgent, rawURL string) (string, error) {
 	canonical, err := Canonical(rawURL)
 	if err == nil {
 		return canonical, nil
@@ -111,24 +121,36 @@ func Resolve(ctx context.Context, doer Doer, userAgent, rawURL string) (string, 
 		return "", err
 	}
 
-	finalURL, err := followRedirect(ctx, doer, userAgent, rawURL)
+	visited, err := followRedirects(ctx, client, userAgent, rawURL)
 	if err != nil {
 		return "", fmt.Errorf("threads: resolve share link: %w", err)
 	}
 
-	canonical, err = Canonical(finalURL)
-	if err != nil {
-		return "", fmt.Errorf("threads: share link resolved to %q: %w", finalURL, err)
+	unavailable := false
+	for _, visitedURL := range visited {
+		canonical, err = Canonical(visitedURL)
+		if err == nil {
+			return canonical, nil
+		}
+		if errors.Is(err, ErrPostUnavailable) {
+			unavailable = true
+		}
 	}
-	return canonical, nil
+
+	if unavailable {
+		return "", fmt.Errorf("%w: %s", ErrPostUnavailable, rawURL)
+	}
+	return "", fmt.Errorf("threads: share link resolved to %q: %w", visited[len(visited)-1], err)
 }
 
-// followRedirect performs a browser-like GET and reports the final URL the
-// client landed on after redirects.
-func followRedirect(ctx context.Context, doer Doer, userAgent, rawURL string) (string, error) {
+// followRedirects performs a browser-like GET and reports every URL the
+// client was redirected to, in order, ending with the URL it landed on.
+// It stops following as soon as a hop can be canonicalized, so the error page
+// Meta appends to unavailable posts never overwrites the post URL.
+func followRedirects(ctx context.Context, client *http.Client, userAgent, rawURL string) ([]string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if userAgent == "" {
@@ -142,19 +164,40 @@ func followRedirect(ctx context.Context, doer Doer, userAgent, rawURL string) (s
 	req.Header.Set("Sec-Fetch-Dest", "document")
 	req.Header.Set("Sec-Fetch-User", "?1")
 
-	resp, err := doer.Do(req)
+	var visited []string
+	stopped := false
+
+	// Copy the client so the caller keeps its own redirect policy while the
+	// transport (uTLS for Threads pages) is reused.
+	following := *client
+	following.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= maxRedirects {
+			return errors.New("stopped after too many redirects")
+		}
+		visited = append(visited, req.URL.String())
+		if _, err := Canonical(req.URL.String()); err != nil {
+			return nil
+		}
+		stopped = true
+		return http.ErrUseLastResponse
+	}
+
+	resp, err := following.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer func() {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 		_ = resp.Body.Close()
 	}()
 
-	if resp.Request == nil || resp.Request.URL == nil {
-		return "", errors.New("no final URL in response")
+	if !stopped {
+		if resp.Request == nil || resp.Request.URL == nil {
+			return nil, errors.New("no final URL in response")
+		}
+		visited = append(visited, resp.Request.URL.String())
 	}
-	return resp.Request.URL.String(), nil
+	return visited, nil
 }
 
 // mediaIDFromParam extracts the first id from an injected_media_ids value,

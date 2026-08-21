@@ -75,7 +75,7 @@ cmd/bot/main.go  # Wires everything together
 
 - **Domain interfaces** (`domain.Downloader`, `domain.PlatformDetector`) are defined in `internal/domain/` and implemented in adapters. Adapters never import each other.
 - **Composite downloader** iterates registered backends in order (yt-dlp first, then Cobalt). To add a new platform, implement `domain.Downloader` and register it in `main.go`.
-- **Threads links** are canonicalized by `adapter/threadsurl` before download: `/share/CODE` links are redirect-resolved, and app-style root links (`/?injected_media_ids=[…]`) are converted back to `/t/CODE` by base64url-encoding the media id. yt-dlp has no Threads extractor and is not registered for the platform.
+- **Threads links** are canonicalized by `adapter/threadsurl` before download: `/share/CODE` links are redirect-resolved, and app-style root links (`/?injected_media_ids=[…]`) are converted back to `/t/CODE` by base64url-encoding the media id. Redirect resolution inspects every hop and stops at the first one that canonicalizes — Meta bounces the resolved post URL on to `/?error=invalid_post` when the post is unavailable, and only the intermediate hop carries the post code. That error page maps to `threadsurl.ErrPostUnavailable`. yt-dlp has no Threads extractor and is not registered for the platform.
 - **yt-dlp format selectors** cap on width as well as height — vertical media (Reels, Shorts) is 720x1280 and a height-only cap matches nothing.
 - **`VideoService.ProcessURL`** returns a cleanup `func()` that must be called after the video is sent — it deletes the temp dir.
 - **File size limit** is hardcoded to 50 MB (Telegram bot API limit). `MAX_FILE_SIZE` env var field exists in the struct but is not yet exposed.
