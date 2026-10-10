@@ -22,6 +22,7 @@ func New() *RegexDetector {
 			{domain.PlatformInstagram, regexp.MustCompile(`(?i)instagram\.com/(?:p|reel|reels|tv)/`)},
 			{domain.PlatformTwitter, regexp.MustCompile(`(?i)(?:twitter\.com|x\.com)/`)},
 			{domain.PlatformThreads, regexp.MustCompile(`(?i)threads\.(?:net|com)/`)},
+			{domain.PlatformGiphy, regexp.MustCompile(`(?i)(?:(?:^|[/.])giphy\.com/(?:gifs|stickers|embed|media)/|i\.giphy\.com/|gph\.is/)`)},
 		},
 	}
 }

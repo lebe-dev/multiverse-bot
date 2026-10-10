@@ -24,6 +24,12 @@ func TestRegexDetector_Detect(t *testing.T) {
 		{"x.com", "https://x.com/user/status/123456", domain.PlatformTwitter},
 		{"threads.net", "https://www.threads.net/@user/post/ABC123", domain.PlatformThreads},
 		{"threads.com", "https://www.threads.com/@vuthiduyen48/post/DVTksS6iWNk", domain.PlatformThreads},
+		{"giphy gif", "https://giphy.com/gifs/RespectiveCollective-dance-ai-kitty-GK7dGndK4kyOozR9Xk", domain.PlatformGiphy},
+		{"giphy sticker", "https://giphy.com/stickers/cat-GK7dGndK4kyOozR9Xk", domain.PlatformGiphy},
+		{"giphy media", "https://media2.giphy.com/media/GK7dGndK4kyOozR9Xk/giphy.gif", domain.PlatformGiphy},
+		{"giphy i", "https://i.giphy.com/GK7dGndK4kyOozR9Xk.webp", domain.PlatformGiphy},
+		{"giphy short", "https://gph.is/g/ZWdKzkD", domain.PlatformGiphy},
+		{"giphy home", "https://giphy.com/", domain.PlatformUnknown},
 		{"unknown", "https://example.com/video", domain.PlatformUnknown},
 		{"empty", "", domain.PlatformUnknown},
 	}
