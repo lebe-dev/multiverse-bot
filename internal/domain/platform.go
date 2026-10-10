@@ -8,6 +8,7 @@ const (
 	PlatformInstagram
 	PlatformTwitter
 	PlatformThreads
+	PlatformGiphy
 )
 
 func (p Platform) String() string {
@@ -20,6 +21,8 @@ func (p Platform) String() string {
 		return "twitter"
 	case PlatformThreads:
 		return "threads"
+	case PlatformGiphy:
+		return "giphy"
 	default:
 		return "unknown"
 	}

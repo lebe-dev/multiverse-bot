@@ -6,6 +6,7 @@ type MediaType int
 const (
 	MediaVideo MediaType = iota
 	MediaPhoto
+	MediaAnimation // silent looping clip (GIF); MP4 or GIF file
 )
 
 // MediaItem is a single downloaded media file (photo or video).
@@ -47,7 +48,7 @@ func (r *MediaResult) TotalSize() int64 {
 // HasVideo returns true if at least one item is a video.
 func (r *MediaResult) HasVideo() bool {
 	for _, item := range r.Items {
-		if item.Type == MediaVideo {
+		if item.Type == MediaVideo || item.Type == MediaAnimation {
 			return true
 		}
 	}

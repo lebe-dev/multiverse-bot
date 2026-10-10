@@ -61,6 +61,7 @@ internal/
       threads/     # Direct Threads scraper with uTLS (Chrome TLS fingerprint)
       lovethreads/ # Threads via lovethreads.net proxy service
       cobalt/      # Cobalt API backend (Instagram, Twitter, Threads)
+      giphy/       # GIPHY: extracts the gif id from any giphy URL, fetches the MP4 rendition (GIF fallback) from media.giphy.com
       composite/ # Fan-out: tries each backend in order until one succeeds
     threadsurl/  # Threads link canonicalization (/share/, injected_media_ids)
     watcher/
@@ -82,3 +83,4 @@ cmd/bot/main.go  # Wires everything together
 - **`ALLOWED_USERS`** middleware short-circuits at the Telegram handler layer; if the list is empty, all users are allowed.
 - **Cookies** (YouTube, Instagram) are stored in SQLite and managed via Telegram admin commands (`/add_youtube_cookies`, `/add_instagram_cookies`). A `CookieManager` materializes them to temp files for yt-dlp. No filesystem cookie files are needed.
 - **Plugin system** — external HTTP services extend the bot with new commands and URL handlers. Declared in `plugins.yml`, loaded at startup. Built-in commands/platforms always take priority. See `ARCH.md` for full spec.
+- **GIPHY** media is returned as `domain.MediaAnimation` and sent via `sendAnimation`, so Telegram shows it as a looping GIF rather than a video player. Animations inside an album are sent as videos (albums cannot hold animations).

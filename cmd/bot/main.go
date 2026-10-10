@@ -17,6 +17,7 @@ import (
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/detector"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/cobalt"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/composite"
+	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/giphy"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/lovethreads"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/savevids"
 	"gitlab.com/tiny-services/multiverse-bot/internal/adapter/downloader/threads"
@@ -135,7 +136,7 @@ func main() {
 		log.Info("youtube engine: yt-dlp")
 	}
 
-	backends := []domain.Downloader{threadsDownloader}
+	backends := []domain.Downloader{threadsDownloader, giphy.New(log)}
 	if youtubeDownloader != nil {
 		backends = append(backends, youtubeDownloader)
 	}

@@ -428,11 +428,31 @@ func (b *Bot) sendPhoto(client *tele.Bot, c tele.Context, filePath, caption stri
 	return err
 }
 
+func (b *Bot) sendAnimation(client *tele.Bot, c tele.Context, filePath, caption string) error {
+	_ = c.Notify(tele.UploadingVideo)
+	w, h, dur := probe.VideoMeta(context.Background(), filePath)
+	anim := &tele.Animation{
+		File:     tele.FromDisk(filePath),
+		Width:    w,
+		Height:   h,
+		Duration: dur,
+		FileName: filepath.Base(filePath),
+	}
+	if caption != "" {
+		anim.Caption = caption
+	}
+	_, err := client.Send(c.Recipient(), anim)
+	return err
+}
+
 func (b *Bot) sendMedia(client *tele.Bot, c tele.Context, result *domain.MediaResult, caption string) error {
 	if len(result.Items) == 1 {
 		item := result.Items[0]
-		if item.Type == domain.MediaPhoto {
+		switch item.Type {
+		case domain.MediaPhoto:
 			return b.sendPhoto(client, c, item.FilePath, caption)
+		case domain.MediaAnimation:
+			return b.sendAnimation(client, c, item.FilePath, caption)
 		}
 		return b.sendVideo(client, c, item.FilePath, caption)
 	}
@@ -455,7 +475,8 @@ func (b *Bot) sendMedia(client *tele.Bot, c tele.Context, result *domain.MediaRe
 				photo.Caption = caption
 			}
 			album = append(album, photo)
-		case domain.MediaVideo:
+		case domain.MediaVideo, domain.MediaAnimation:
+			// Albums cannot hold animations; send them as videos.
 			w, h, _ := probe.VideoMeta(context.Background(), item.FilePath)
 			video := &tele.Video{
 				File:   tele.FromDisk(item.FilePath),
@@ -942,9 +963,9 @@ func (b *Bot) handleError(c tele.Context, url string, err error) error {
 	switch {
 	case errors.Is(err, domain.ErrUnsupportedPlatform):
 		b.log.Warn("unsupported platform", "user", user, "user_id", userID, "url", url)
-		platforms := "YouTube, X (Twitter), Threads"
+		platforms := "YouTube, X (Twitter), Threads, GIPHY"
 		if b.instagramEnabled {
-			platforms = "YouTube, Instagram, X (Twitter), Threads"
+			platforms = "YouTube, Instagram, X (Twitter), Threads, GIPHY"
 		}
 		return c.Send(fmt.Sprintf("Платформа не поддерживается. Поддерживаются: %s.", platforms))
 	case errors.Is(err, domain.ErrVideoTooLarge):
